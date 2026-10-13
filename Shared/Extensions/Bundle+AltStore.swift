@@ -53,7 +53,7 @@ public extension Bundle
 
 public extension Bundle
 {
-    static var baseAltStoreAppGroupID = "group.com.SideStore.SideStore"
+    static var baseAltStoreAppGroupID = "group.io.altpocket.AltPocket"
     
     var appGroups: [String] {
         return self.infoDictionary?[Bundle.Info.appGroups] as? [String] ?? []

@@ -15,7 +15,7 @@
 
 Actions 生成的是 **未签名 IPA**。内置 VPN 主程序和 LocalTunnel.appex 均需包含有效的 `com.apple.developer.networking.networkextension = packet-tunnel-provider` 权限与匹配的 provisioning profiles。普通免费 Apple ID 不提供该权限；改 plist 或假签无法赋予权限。一般需由具备相应能力的付费开发者账号签名，且签名工具必须保留扩展。证书类型本身不能代替正确权限。
 
-首次安装、信任与生成设备配对文件仍需电脑。此项目不绕过设备信任，也不会凭空生成配对密钥。
+首次安装、信任与生成设备配对文件仍需电脑。此项目不绕过设备信任，也不会凭空生成配对密钥。AltPocket 与官方 SideStore 使用不同应用/数据组标识，官方源仅用于浏览其他 App；本分支升级请下载新的 IPA 手动安装。
 
 ## 使用
 
