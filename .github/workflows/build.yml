@@ -25,12 +25,14 @@ jobs:
       - name: Install project tools
         run: |
           gem install xcodeproj --no-document --user-install
+          brew install cbindgen
           echo "$(ruby -e 'puts Gem.user_dir')/bin" >> "$GITHUB_PATH"
       - name: Configure iOS 12 app and VPN extension
         run: ruby scripts/configure.rb
       - name: Install Rust target
         run: rustup target add aarch64-apple-ios
       - name: Cache native libraries
+        id: native-cache
         uses: actions/cache@v4
         with:
           path: |
@@ -44,6 +46,16 @@ jobs:
           cargo generate-lockfile --manifest-path Dependencies/minimuxer/Cargo.toml
           cargo build --manifest-path Dependencies/em_proxy/Cargo.toml --release --lib --target aarch64-apple-ios
           cargo build --manifest-path Dependencies/minimuxer/Cargo.toml --release --lib --target aarch64-apple-ios
+          test -s Dependencies/minimuxer/minimuxer.h
+      - name: Save native cache before Xcode
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            Dependencies/em_proxy/target
+            Dependencies/minimuxer/target
+          key: altpocket-ios12-native-v2-${{ runner.os }}
       - name: Archive unsigned application
         run: |
           set -o pipefail
