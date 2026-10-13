@@ -63,6 +63,8 @@ open class MergePolicy: RSTRelationshipPreservingMergePolicy
 
                 for app in databaseObject.apps
                 {
+                    // AltPocket registers itself locally; it is not an app in the upstream catalog.
+                    if app.bundleIdentifier == StoreApp.altstoreAppID { continue }
                     if !bundleIdentifiers.contains(app.bundleIdentifier)
                     {
                         // No longer listed in Source, so remove it from database.

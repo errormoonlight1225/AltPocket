@@ -70,7 +70,7 @@ jobs:
           path: build/SourcePackages
           key: altpocket-spm-xcode15-v1-${{ runner.os }}
       - name: Resolve Swift packages
-        run: xcodebuild -resolvePackageDependencies -project AltStore.xcodeproj -scheme AltStore -clonedSourcePackagesDir "$PWD/build/SourcePackages"
+        run: xcodebuild -resolvePackageDependencies -project AltStore.xcodeproj -scheme AltStore -clonedSourcePackagesDirPath "$PWD/build/SourcePackages"
       - name: Save Swift package cache
         if: steps.swift-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -80,7 +80,7 @@ jobs:
       - name: Archive unsigned application
         run: |
           set -o pipefail
-          xcodebuild -project AltStore.xcodeproj -scheme AltStore -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -archivePath "$PWD/build/AltPocket.xcarchive" -clonedSourcePackagesDir "$PWD/build/SourcePackages" archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM=XYZ0123456 ORG_IDENTIFIER=io.altpocket COMPILER_INDEX_STORE_ENABLE=NO | tee build.log
+          xcodebuild -project AltStore.xcodeproj -scheme AltStore -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -archivePath "$PWD/build/AltPocket.xcarchive" -clonedSourcePackagesDirPath "$PWD/build/SourcePackages" archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM=XYZ0123456 ORG_IDENTIFIER=io.altpocket COMPILER_INDEX_STORE_ENABLE=NO | tee build.log
       - name: Package and inspect IPA
         run: python3 scripts/package.py
       - name: Upload IPA and source snapshot
