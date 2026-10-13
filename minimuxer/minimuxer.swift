@@ -35,11 +35,10 @@ public func debug_app(app_id: String) throws -> Uhoh {
 }
 
 public func install_provisioning_profile(plist: Data) throws -> Uhoh {
-    let pls = String(decoding: plist, as: UTF8.self)
-    print(pls)
-    print(plist)
-    let x = plist.withUnsafeBytes { buf in UnsafeMutableRawPointer(mutating: buf) }
-    let res = minimuxer_install_provisioning_profile(x, UInt32(plist.count))
+    let res = plist.withUnsafeBytes { buf -> Int32 in
+        guard let base = buf.baseAddress else { return -1 }
+        return minimuxer_install_provisioning_profile(UnsafeMutableRawPointer(mutating: base), UInt32(plist.count))
+    }
     if res != 0 {
         throw Uhoh.Bad(code: res)
     }

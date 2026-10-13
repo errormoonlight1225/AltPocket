@@ -15,14 +15,25 @@ enum PocketRuntime {
         return id
     }
     private static var started = false
+    private static var didAttemptStart = false
     static private(set) var lastError: String?
     static func startIfPaired() {
         if !Thread.isMainThread {
             DispatchQueue.main.async { startIfPaired() }
             return
         }
-        guard !started, let data = try? Data(contentsOf: pairingURL),
-              let xml = String(data: data, encoding: .utf8) else { return }
+        guard !didAttemptStart, let udid = deviceUDID,
+              let data = try? Data(contentsOf: pairingURL),
+              var pairing = (try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)) as? [String: Any] else { return }
+        if let original = pairing["UDID"] as? String, original.caseInsensitiveCompare(udid) != .orderedSame {
+            lastError = "配对文件中的 UDID 与设置不一致，请检查是否为同一台设备。"
+            return
+        }
+        pairing["UDID"] = udid
+        guard let normalized = try? PropertyListSerialization.data(fromPropertyList: pairing, format: .xml, options: 0),
+              let xml = String(data: normalized, encoding: .utf8) else { return }
+        // The legacy library has a process-global logger; retry requires relaunch.
+        didAttemptStart = true
         set_usbmuxd_socket()
         let result = start_minimuxer(pairing_file: xml)
         if result == 0 { started = true; lastError = nil }

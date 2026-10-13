@@ -28,7 +28,7 @@ final class PocketSetupController: UITableViewController, UIDocumentPickerDelega
     }
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         if section == 0 { return "从已信任的电脑导出本机配对文件。UDID 可在电脑设备信息中查看。Anisette 服务只接收数据请求；Apple ID 密码由签名核心发给 Apple。请仅使用自己信任的 HTTPS 服务。" }
-        if section == 1 { return "状态：\(PocketVPN.shared.statusText)。主 App 和扩展都需要带 Network Extension 权限的有效签名。普通免费 Apple ID 无法签发此权限。只处理本机 10.7.0.1 的流量，不提供上网代理。" }
+        if section == 1 { return "状态：\(PocketVPN.shared.statusText)。\(PocketRuntime.lastError ?? "")主 App 和扩展都需要带 Network Extension 权限的有效签名。普通免费 Apple ID 无法签发此权限。只处理本机 10.7.0.1 的流量，不提供上网代理。" }
         return "基于 SideStore 0.1.1 / AltStore，AGPL-3.0；独立实验分支，非官方产品。iOS 12 真机、Apple 登录与续签尚待验证；新 iOS 也不保证兼容。后台续签由系统调度，不能保证常驻。"
     }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -58,6 +58,7 @@ final class PocketSetupController: UITableViewController, UIDocumentPickerDelega
                 input(title: "本机 UDID", value: PocketRuntime.deviceUDID) { value in
                     guard PocketRuntime.validUDID(value) else { self.show("UDID 格式不正确，请完整复制电脑显示的设备标识。"); return }
                     UserDefaults.standard.set(value, forKey: "PocketDeviceUDID")
+                    PocketRuntime.startIfPaired()
                     self.tableView.reloadData()
                 }
             default:
