@@ -42,15 +42,18 @@ jobs:
           key: altpocket-ios12-native-v2-${{ runner.os }}
       - name: Build native protocol libraries
         run: |
-          cargo generate-lockfile --manifest-path Dependencies/em_proxy/Cargo.toml
-          cargo generate-lockfile --manifest-path Dependencies/minimuxer/Cargo.toml
-          cargo build --manifest-path Dependencies/em_proxy/Cargo.toml --release --lib --target aarch64-apple-ios
-          cargo build --manifest-path Dependencies/minimuxer/Cargo.toml --release --lib --target aarch64-apple-ios
+          cargo build --locked --manifest-path Dependencies/em_proxy/Cargo.toml --release --lib --target aarch64-apple-ios
+          cargo build --locked --manifest-path Dependencies/minimuxer/Cargo.toml --release --lib --target aarch64-apple-ios
       - name: Regenerate C interface even on cached builds
         working-directory: Dependencies/minimuxer
         run: |
           cbindgen --config cbindgen.toml --output minimuxer.h
           test -s minimuxer.h
+      - name: Regenerate proxy C interface
+        working-directory: Dependencies/em_proxy
+        run: |
+          cbindgen --config cbindgen.toml --output em_proxy.h
+          test -s em_proxy.h
       - name: Save native cache before Xcode
         if: steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -60,10 +63,24 @@ jobs:
             Dependencies/em_proxy/target
             Dependencies/minimuxer/target
           key: altpocket-ios12-native-v2-${{ runner.os }}
+      - name: Restore Swift package cache
+        id: swift-cache
+        uses: actions/cache@v4
+        with:
+          path: build/SourcePackages
+          key: altpocket-spm-xcode15-v1-${{ runner.os }}
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project AltStore.xcodeproj -scheme AltStore -clonedSourcePackagesDir "$PWD/build/SourcePackages"
+      - name: Save Swift package cache
+        if: steps.swift-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/SourcePackages
+          key: altpocket-spm-xcode15-v1-${{ runner.os }}
       - name: Archive unsigned application
         run: |
           set -o pipefail
-          xcodebuild -project AltStore.xcodeproj -scheme AltStore -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -archivePath "$PWD/build/AltPocket.xcarchive" archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM=XYZ0123456 ORG_IDENTIFIER=io.altpocket COMPILER_INDEX_STORE_ENABLE=NO | tee build.log
+          xcodebuild -project AltStore.xcodeproj -scheme AltStore -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -archivePath "$PWD/build/AltPocket.xcarchive" -clonedSourcePackagesDir "$PWD/build/SourcePackages" archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM=XYZ0123456 ORG_IDENTIFIER=io.altpocket COMPILER_INDEX_STORE_ENABLE=NO | tee build.log
       - name: Package and inspect IPA
         run: python3 scripts/package.py
       - name: Upload IPA and source snapshot

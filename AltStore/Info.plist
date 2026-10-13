@@ -196,5 +196,7 @@
 	</array>
 	<key>CFBundleDisplayName</key>
 	<string>AltPocket</string>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
 </dict>
 </plist>

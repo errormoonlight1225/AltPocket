@@ -86,3 +86,10 @@ puts 'Configured AltPocket and embedded LocalTunnel for iOS 12.0'
     File.write(path, text + "\n[patch.crates-io]\nnum_threads = { path = \"../../Vendor/num_threads-0.1.7\" }\n")
   end
 end
+
+raise 'Native patch failed' unless system('python3', 'scripts/patch_native.py')
+
+require 'fileutils'
+%w[em_proxy minimuxer].each do |name|
+  FileUtils.cp("Lockfiles/#{name}.Cargo.lock", "Dependencies/#{name}/Cargo.lock")
+end

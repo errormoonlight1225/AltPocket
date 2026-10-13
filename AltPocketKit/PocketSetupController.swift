@@ -42,7 +42,8 @@ final class PocketSetupController: UITableViewController, UIDocumentPickerDelega
             cell.detailTextLabel?.text = [PocketRuntime.hasPairing ? "已导入；更换后请重新打开 App" : "尚未导入", PocketRuntime.deviceUDID == nil ? "尚未设置" : "已设置（不显示完整设备标识）", UserDefaults.standard.customAnisetteURL == nil ? "必须设置；无默认第三方服务" : "已设置"][indexPath.row]
         }
         cell.isUserInteractionEnabled = !busy
-        cell.textLabel?.textColor = .darkText
+        if #available(iOS 13, *) { cell.textLabel?.textColor = .label }
+        else { cell.textLabel?.textColor = .darkText }
         return cell
     }
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {

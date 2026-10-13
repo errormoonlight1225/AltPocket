@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 目标部署版本：iOS 12.0，arm64。是否编译通过以 Actions 的实际结果为准。
+- 已通过 Xcode 15.4 编译；主 App、内置 VPN 扩展的 plist 和 Mach-O 最低版本均验证为 iOS 12.0（arm64）。
 - **尚未经过 iOS 12 真机验证**；不能把构建成功视为登录、配对、安装或续签成功。
 - 签名、证书、IPA 重签、安装流程继承旧版 AltSign / SideStore / minimuxer。旧版 Apple 登录与 anisette 协议是否仍被 Apple 接受，需要实测；不声称支持所有新 iOS。
 - 新增原生 UIKit 本机服务页面、嵌入式 Packet Tunnel 扩展、VPN 管理、TCP 端口检测、安全配对文件导入。
@@ -31,7 +31,7 @@ Apple ID 认证流程由上游 AltSign 对接 Apple。不要把密码、证书�
 
 ## 构建
 
-GitHub Actions → **Build AltPocket iOS 12** → **Run workflow**。工作流使用 macOS 14 / Xcode 15.4，构建 app 与 VPN，验证两者的最低系统版本，上传 unsigned IPA、SHA-256 构建报告和含依赖的对应源码快照。构建日志单独上传。
+GitHub Actions → **Build AltPocket iOS 12** → **Run workflow**。工作流使用 macOS 14 / Xcode 15.4，构建 app 与 VPN，验证两者的最低系统版本，上传 unsigned IPA、SHA-256 构建报告和含 Git 子模块的源码快照（Swift / Rust 包按锁定信息获取）。构建日志单独上传。
 
 本地需 macOS、Xcode 15.4、Ruby / xcodeproj、Rust / iOS target：
 
@@ -42,8 +42,8 @@ gem install xcodeproj
 ruby scripts/configure.rb
 rustup target add aarch64-apple-ios
 export IPHONEOS_DEPLOYMENT_TARGET=12.0
-cargo build --manifest-path Dependencies/em_proxy/Cargo.toml --release --lib --target aarch64-apple-ios
-cargo build --manifest-path Dependencies/minimuxer/Cargo.toml --release --lib --target aarch64-apple-ios
+cargo build --locked --manifest-path Dependencies/em_proxy/Cargo.toml --release --lib --target aarch64-apple-ios
+cargo build --locked --manifest-path Dependencies/minimuxer/Cargo.toml --release --lib --target aarch64-apple-ios
 xcodebuild -project AltStore.xcodeproj -scheme AltStore -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -archivePath build/AltPocket.xcarchive archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
 python3 scripts/package.py
 ```
@@ -54,4 +54,5 @@ python3 scripts/package.py
 - AltStore / Riley Testut: https://github.com/altstoreio/AltStore
 - 原有子模块和 Swift 包保留其许可证及版权。
 - 本机回环网络技术参考 Jitterbug（https://github.com/osy/Jitterbug）和 LocalDevVPN（https://github.com/jkcoxson/LocalDevVPN）；这里是独立编写的 Packet Tunnel 实现，未使用 LocalDevVPN 品牌与图标。
+- `Vendor/num_threads-0.1.7` 保留 Jacob Pratt 的 MIT 许可证；Darwin 兼容修改只替换失效的 task-port 包装接口。
 - 本项目衍生代码遵循上游 **AGPL-3.0**，参见 LICENSE。保留 Git 历史及原作者署名。新增兼容与 VPN 代码由 AI 辅助编写，需人工与真机审查；不向上游提交自动化 PR。
