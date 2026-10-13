@@ -76,3 +76,13 @@ app.build_configurations.each do |c|
 end
 project.save
 puts 'Configured AltPocket and embedded LocalTunnel for iOS 12.0'
+
+# num_threads 0.1.7 calls a libc Rust wrapper removed in newer libc.
+# Preserve its behavior using Darwin's exported task-port symbol.
+%w[em_proxy minimuxer].each do |name|
+  path = "Dependencies/#{name}/Cargo.toml"
+  text = File.read(path)
+  unless text.include?('[patch.crates-io]')
+    File.write(path, text + "\n[patch.crates-io]\nnum_threads = { path = \"../../Vendor/num_threads-0.1.7\" }\n")
+  end
+end

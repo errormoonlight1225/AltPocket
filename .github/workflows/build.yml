@@ -41,9 +41,7 @@ jobs:
       - name: Build native protocol libraries
         run: |
           cargo generate-lockfile --manifest-path Dependencies/em_proxy/Cargo.toml
-          cargo update --manifest-path Dependencies/em_proxy/Cargo.toml -p libc --precise 0.2.177
           cargo generate-lockfile --manifest-path Dependencies/minimuxer/Cargo.toml
-          cargo update --manifest-path Dependencies/minimuxer/Cargo.toml -p libc --precise 0.2.177
           cargo build --manifest-path Dependencies/em_proxy/Cargo.toml --release --lib --target aarch64-apple-ios
           cargo build --manifest-path Dependencies/minimuxer/Cargo.toml --release --lib --target aarch64-apple-ios
       - name: Archive unsigned application
