@@ -46,7 +46,11 @@ jobs:
           cargo generate-lockfile --manifest-path Dependencies/minimuxer/Cargo.toml
           cargo build --manifest-path Dependencies/em_proxy/Cargo.toml --release --lib --target aarch64-apple-ios
           cargo build --manifest-path Dependencies/minimuxer/Cargo.toml --release --lib --target aarch64-apple-ios
-          test -s Dependencies/minimuxer/minimuxer.h
+      - name: Regenerate C interface even on cached builds
+        working-directory: Dependencies/minimuxer
+        run: |
+          cbindgen --config cbindgen.toml --output minimuxer.h
+          test -s minimuxer.h
       - name: Save native cache before Xcode
         if: steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
