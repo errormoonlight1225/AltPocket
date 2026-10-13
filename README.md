@@ -1,47 +1,57 @@
-# SideStore
+# AltPocket — iOS 12 compatibility experiment
 
-> SideStore is an *untethered, community driven* alternative app store for non-jailbroken iOS devices 
+独立开源实验分支，基于 **SideStore 0.1.1**（`c9001f068bd03b3ff3748f7f24d8f22e64057d27`）及 AltStore，目标是在 iPhone / iPad 本机签名、安装和刷新 IPA，并内置 LocalVPN。**不是 AltStore / SideStore 官方版本。**
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://makeapullrequest.com)
-[![Nightly SideStore build](https://github.com/SideStore/SideStore/actions/workflows/nightly.yml/badge.svg)](https://github.com/SideStore/SideStore/actions/workflows/nightly.yml)
-[![.github/workflows/beta.yml](https://github.com/SideStore/SideStore/actions/workflows/beta.yml/badge.svg)](https://github.com/SideStore/SideStore/actions/workflows/beta.yml)
-[![Discord](https://img.shields.io/discord/949183273383395328?label=Discord)](https://dis.sidestore.io)
+## 当前状态
 
-![Alt](https://repobeats.axiom.co/api/embed/3a329ce95955690b9a9366f8d5598626a847d96c.svg "Repobeats analytics image")
+- 目标部署版本：iOS 12.0，arm64。是否编译通过以 Actions 的实际结果为准。
+- **尚未经过 iOS 12 真机验证**；不能把构建成功视为登录、配对、安装或续签成功。
+- 签名、证书、IPA 重签、安装流程继承旧版 AltSign / SideStore / minimuxer。旧版 Apple 登录与 anisette 协议是否仍被 Apple 接受，需要实测；不声称支持所有新 iOS。
+- 新增原生 UIKit 本机服务页面、嵌入式 Packet Tunnel 扩展、VPN 管理、TCP 端口检测、安全配对文件导入。
+- 禁用上游 AppCenter 遥测；移除上游的固定设备 ID、默认 anisette 地址；修复 anisette 错误路径不结束/强制解包崩溃。
+- 不提供后台常驻保证；iOS 决定后台刷新时机。
 
-SideStore is an iOS application that allows you to sideload apps onto your iOS device with just your Apple ID. SideStore resigns apps with your personal development certificate, and then uses a [specially designed VPN](https://github.com/jkcoxson/em_proxy) in order to trick iOS into installing them. SideStore will periodically "refresh" your apps in the background, to keep their normal 7-day development period from expiring.
+## 签名要求（请先读）
 
-SideStore's goal is to provide an untethered sideloading experience. It's a community driven fork of [AltStore](https://github.com/rileytestut/AltStore), and has already implemented some of the community's most-requested features.
+Actions 生成的是 **未签名 IPA**。内置 VPN 主程序和 LocalTunnel.appex 均需包含有效的 `com.apple.developer.networking.networkextension = packet-tunnel-provider` 权限与匹配的 provisioning profiles。普通免费 Apple ID 不提供该权限；改 plist 或假签无法赋予权限。一般需由具备相应能力的付费开发者账号签名，且签名工具必须保留扩展。证书类型本身不能代替正确权限。
 
-(Contributions are welcome! 🙂)
+首次安装、信任与生成设备配对文件仍需电脑。此项目不绕过设备信任，也不会凭空生成配对密钥。
 
-## Requirements
-- Xcode 15
-- iOS 14+
-- Rustup (`brew install rustup`)
+## 使用
 
-Why iOS 14? Targeting such a recent version of iOS allows us to accelerate development, especially since not many developers have older devices to test on. This is corrobated by the fact that SwiftUI support is much better, allowing us to transistion to a more modern UI codebase.
-## Project Overview
+1. 用具备 Network Extension 权限的有效签名安装整个 IPA，保留 VPN 扩展。
+2. 打开 LocalVPN 页，导入本机 `.mobiledevicepairing` / pairing `.plist` 文件。支持二进制与 XML plist；配对文件只在本地保存并排除备份。
+3. 设置**本机** UDID；从电脑设备信息取得，不要公开上传。
+4. 设置自己信任的 HTTPS anisette 服务。没有默认第三方服务；此核心使用旧式 JSON anisette 响应，不保证任意新服务兼容。
+5. 安装 VPN 配置并允许系统提示，连接 LocalVPN。只路由 `10.7.0.1/32`，不是上网 VPN。
+6. 设备保持解锁；“检测设备服务”只测 TCP 62078 可达性，不验证配对、签名或安装。
+7. Settings 登录 Apple ID，My Apps → `+` 导入 IPA，点击应用剩余天数刷新。更换配对文件后重新打开 App。
 
-### SideStore
-SideStore is a just regular, sandboxed iOS application. The AltStore app target contains the vast majority of SideStore's functionality, including all the logic for downloading and updating apps through SideStore. SideStore makes heavy use of standard iOS frameworks and technologies most iOS developers are familiar with.
+Apple ID 认证流程由上游 AltSign 对接 Apple。不要把密码、证书、配对文件、anisette 身份数据或 UDID 放进仓库、Actions 日志或 issue。请自行审查依赖后使用实验签名工具。
 
-### EM Proxy
-[EM Proxy](https://github.com/jkcoxson/em_proxy) powers the defining feature of SideStore: untethered app installation. By leveraging a custom-built App Store app with additional entitlements ([LocalDevVPN](https://github.com/jkcoxson/LocalDevVPN)) to create the VPN tunnel for us, it allows SideStore to take advantage of [Jitterbug](https://github.com/osy/Jitterbug)'s loopback method without requiring a paid developer account.
+## 构建
 
-### Minimuxer
-[Minimuxer](https://github.com/jkcoxson/minimuxer) is a lockdown muxer that can run inside iOS’s sandbox. It replicates Apple’s usbmuxd protocol on macOS to “discover” devices to interface with LocalDevVPN on-device.
+GitHub Actions → **Build AltPocket iOS 12** → **Run workflow**。工作流使用 macOS 14 / Xcode 15.4，构建 app 与 VPN，验证两者的最低系统版本，上传 unsigned IPA、SHA-256 构建报告和含依赖的对应源码快照。构建日志单独上传。
 
-### Roxas
-[Roxas](https://github.com/rileytestut/roxas) is Riley Testut's internal framework from AltStore used across many of their iOS projects, developed to simplify a variety of common tasks used in iOS development.
+本地需 macOS、Xcode 15.4、Ruby / xcodeproj、Rust / iOS target：
 
-We're hoping to eventually eliminate our dependency on it, as it increases the amount of unnecessary Objective-C in the project.
+```sh
+git clone --recursive https://github.com/errormoonlight1225/AltPocket.git
+cd AltPocket
+gem install xcodeproj
+ruby scripts/configure.rb
+rustup target add aarch64-apple-ios
+export IPHONEOS_DEPLOYMENT_TARGET=12.0
+cargo build --manifest-path Dependencies/em_proxy/Cargo.toml --release --lib --target aarch64-apple-ios
+cargo build --manifest-path Dependencies/minimuxer/Cargo.toml --release --lib --target aarch64-apple-ios
+xcodebuild -project AltStore.xcodeproj -scheme AltStore -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -archivePath build/AltPocket.xcarchive archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+python3 scripts/package.py
+```
 
-## Contributing/Compilation Instructions
+## 来源与许可证
 
-Please see [CONTRIBUTING.md](./CONTRIBUTING.md)
-
-## Licensing
-
-This project is licensed under the **AGPLv3 license**.
+- SideStore: https://github.com/SideStore/SideStore
+- AltStore / Riley Testut: https://github.com/altstoreio/AltStore
+- 原有子模块和 Swift 包保留其许可证及版权。
+- 本机回环网络技术参考 Jitterbug（https://github.com/osy/Jitterbug）和 LocalDevVPN（https://github.com/jkcoxson/LocalDevVPN）；这里是独立编写的 Packet Tunnel 实现，未使用 LocalDevVPN 品牌与图标。
+- 本项目衍生代码遵循上游 **AGPL-3.0**，参见 LICENSE。保留 Git 历史及原作者署名。新增兼容与 VPN 代码由 AI 辅助编写，需人工与真机审查；不向上游提交自动化 PR。

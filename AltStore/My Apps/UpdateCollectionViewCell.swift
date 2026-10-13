@@ -6,7 +6,7 @@
 //  Copyright © 2019 Riley Testut. All rights reserved.
 //
 
-@preconcurrency import UIKit
+import UIKit
 
 extension UpdateCollectionViewCell
 {
@@ -17,25 +17,17 @@ extension UpdateCollectionViewCell
     }
 }
 
-@objc final class UpdateCollectionViewCell: UICollectionViewCell
+@objc class UpdateCollectionViewCell: UICollectionViewCell
 {
-    var bundleIdentifier: String?
-    
     var mode: Mode = .expanded {
         didSet {
-            switch self.mode {
-            case .collapsed:
-                self.versionDescriptionTextView.isCollapsed = true
-            case .expanded:
-                self.versionDescriptionTextView.isCollapsed = false
-            }
-            self.setNeedsLayout()
+            self.update()
         }
     }
     
     @IBOutlet var bannerView: AppBannerView!
-//    @IBOutlet var versionDescriptionTextView: CollapsingTextView!
-    @IBOutlet var versionDescriptionTextView: CollapsingMarkdownView!
+    @IBOutlet var versionDescriptionTitleLabel: UILabel!
+    @IBOutlet var versionDescriptionTextView: CollapsingTextView!
     
     @IBOutlet private var blurView: UIVisualEffectView!
     
@@ -50,7 +42,8 @@ extension UpdateCollectionViewCell
         self.contentView.preservesSuperviewLayoutMargins = true
         
         self.bannerView.backgroundEffectView.isHidden = true
-        
+        self.bannerView.button.setTitle(NSLocalizedString("UPDATE", comment: ""), for: .normal)
+                
         self.blurView.layer.cornerRadius = 20
         self.blurView.layer.masksToBounds = true
         
@@ -93,17 +86,6 @@ extension UpdateCollectionViewCell
             return view
         }
     }
-    
-//    override func systemLayoutSizeFitting(_ targetSize: CGSize, withHorizontalFittingPriority horizontalFittingPriority: UILayoutPriority, verticalFittingPriority: UILayoutPriority) -> CGSize
-//    {
-//        // Ensure cell is laid out so it will report correct size.
-//        self.versionDescriptionTextView.setNeedsLayout()
-//        self.versionDescriptionTextView.layoutIfNeeded()
-//        
-//        let size = super.systemLayoutSizeFitting(targetSize, withHorizontalFittingPriority: horizontalFittingPriority, verticalFittingPriority: verticalFittingPriority)
-//        
-//        return size
-//    }
 }
 
 private extension UpdateCollectionViewCell
@@ -116,6 +98,7 @@ private extension UpdateCollectionViewCell
         case .expanded: self.versionDescriptionTextView.isCollapsed = false
         }
         
+        self.versionDescriptionTitleLabel.textColor = self.originalTintColor ?? self.tintColor
         self.blurView.backgroundColor = self.originalTintColor ?? self.tintColor
         self.bannerView.button.progressTintColor = self.originalTintColor ?? self.tintColor
         

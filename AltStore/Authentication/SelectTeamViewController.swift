@@ -6,21 +6,24 @@
 //  Copyright © 2021 Riley Testut. All rights reserved.
 //
 
-@preconcurrency import UIKit
-import SideSign
+import UIKit
+import SafariServices
+import MessageUI
+import Intents
+import IntentsUI
 
-final class SelectTeamViewController: UITableViewController
+import AltSign
+
+class SelectTeamViewController: UITableViewController
 {
     public var teams: [ALTTeam]?
     public var completionHandler: ((Result<ALTTeam, Swift.Error>)  -> Void)?
     
     private var prototypeHeaderFooterView: SettingsHeaderFooterView!
     
-    #if !os(tvOS)
     override var preferredStatusBarStyle: UIStatusBarStyle {
         return .lightContent
     }
-    #endif
     
     override func numberOfSections(in tableView: UITableView) -> Int {
         return 1

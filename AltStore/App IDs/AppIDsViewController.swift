@@ -6,19 +6,13 @@
 //  Copyright © 2020 Riley Testut. All rights reserved.
 //
 
-@preconcurrency import UIKit
-import CoreData
-import SwiftUI
-import SideSign
+import UIKit
 
-extension AppIDsViewController {
-    static let didDismissNotification = Notification.Name("AppIDsViewControllerDidDismissNotification")
-}
+import AltStoreCore
+import Roxas
 
-final class AppIDsViewController: UICollectionViewController
+class AppIDsViewController: UICollectionViewController
 {
-    var activeTeam: ALTTeam?
-    
     private lazy var dataSource = self.makeDataSource()
     
     private var didInitialFetch = false
@@ -27,37 +21,25 @@ final class AppIDsViewController: UICollectionViewController
             self.update()
         }
     }
-    private var doneBarButtonItem: UIBarButtonItem?
-    
-    private weak var footerView: TextCollectionReusableView?
     
     @IBOutlet var activityIndicatorBarButtonItem: UIBarButtonItem!
-
-    override func viewWillDisappear(_ animated: Bool)
-    {
-        super.viewWillDisappear(animated)
-        NotificationCenter.default.post(name: AppIDsViewController.didDismissNotification, object: self)
-    }
     
     override func viewDidLoad()
     {
         super.viewDidLoad()
         
-        self.navigationController?.additionalSafeAreaInsets.top = 20
-        self.doneBarButtonItem = self.navigationItem.rightBarButtonItem
-        
         self.collectionView.dataSource = self.dataSource
-        self.dataSource.contentView = self.collectionView
-        self.dataSource.fetchedResultsController.delegate = self
         
         self.activityIndicatorBarButtonItem.isIndicatingActivity = true
+        
+        let refreshControl = UIRefreshControl()
+        refreshControl.addTarget(self, action: #selector(AppIDsViewController.fetchAppIDs), for: .primaryActionTriggered)
+        self.collectionView.refreshControl = refreshControl
     }
     
     override func viewWillAppear(_ animated: Bool)
     {
         super.viewWillAppear(animated)
-        
-        self.updateActiveTeam()
         
         if !self.didInitialFetch
         {
@@ -68,7 +50,7 @@ final class AppIDsViewController: UICollectionViewController
 
 private extension AppIDsViewController
 {
-    func makeDataSource() -> FetchedResultsCollectionViewDataSource<AppID>
+    func makeDataSource() -> RSTFetchedResultsCollectionViewDataSource<AppID>
     {
         let fetchRequest = AppID.fetchRequest() as NSFetchRequest<AppID>
         fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \AppID.name, ascending: true),
@@ -76,26 +58,24 @@ private extension AppIDsViewController
                                         NSSortDescriptor(keyPath: \AppID.expirationDate, ascending: true)]
         fetchRequest.returnsObjectsAsFaults = false
         
-        if let team = self.activeTeam
+        if let team = DatabaseManager.shared.activeTeam()
         {
-            fetchRequest.predicate = NSPredicate(format: "%K == %@", #keyPath(AppID.team.identifier), team.identifier)
+            fetchRequest.predicate = NSPredicate(format: "%K == %@", #keyPath(AppID.team), team)
         }
         else
         {
             fetchRequest.predicate = NSPredicate(value: false)
         }
         
-        let dataSource = FetchedResultsCollectionViewDataSource<AppID>(fetchRequest: fetchRequest, managedObjectContext: DatabaseManager.shared.viewContext)
+        let dataSource = RSTFetchedResultsCollectionViewDataSource<AppID>(fetchRequest: fetchRequest, managedObjectContext: DatabaseManager.shared.viewContext)
         dataSource.proxy = self
-        dataSource.cellConfigurationHandler = { [weak self] (cell, appID, indexPath) in
-            guard let self = self else { return }
+        dataSource.cellConfigurationHandler = { (cell, appID, indexPath) in
             let tintColor = UIColor.altPrimary
             
-            let cell = cell as! AppBannerCollectionViewCell
+            let cell = cell as! BannerCollectionViewCell
+            cell.layoutMargins.left = self.view.layoutMargins.left
+            cell.layoutMargins.right = self.view.layoutMargins.right
             cell.tintColor = tintColor
-            
-            cell.contentView.preservesSuperviewLayoutMargins = false
-            cell.contentView.layoutMargins = UIEdgeInsets(top: 0, left: self.view.layoutMargins.left, bottom: 0, right: self.view.layoutMargins.right)
                         
             cell.bannerView.iconImageView.isHidden = true
             cell.bannerView.button.isIndicatingActivity = false
@@ -110,21 +90,14 @@ private extension AppIDsViewController
                 cell.bannerView.button.isUserInteractionEnabled = false
                 
                 cell.bannerView.buttonLabel.isHidden = false
-
-                let currentDate = Date()
-
-                let formatter = DateComponentsFormatter()
-                formatter.unitsStyle = .full
-                formatter.includesApproximationPhrase = false
-                formatter.includesTimeRemainingPhrase = false
-                formatter.allowedUnits = [.minute, .hour, .day]
-                formatter.maximumUnitCount = 1
-
-                let timeInterval = formatter.string(from: currentDate, to: expirationDate)
-                let timeIntervalText = timeInterval ?? NSLocalizedString("Unknown", comment: "")
-                cell.bannerView.button.setTitle(timeIntervalText.uppercased(), for: .normal)
                 
-                attributedAccessibilityLabel.mutableString.append(timeIntervalText)
+                let currentDate = Date()
+                
+                let numberOfDays = expirationDate.numberOfCalendarDays(since: currentDate)
+                let numberOfDaysText = (numberOfDays == 1) ? NSLocalizedString("1 day", comment: "") : String(format: NSLocalizedString("%@ days", comment: ""), NSNumber(value: numberOfDays))
+                cell.bannerView.button.setTitle(numberOfDaysText.uppercased(), for: .normal)
+                
+                attributedAccessibilityLabel.mutableString.append(String(format: NSLocalizedString("Expires in %@.", comment: ""), numberOfDaysText) + " ")
             }
             else
             {
@@ -137,12 +110,12 @@ private extension AppIDsViewController
             cell.bannerView.titleLabel.text = appID.name
             cell.bannerView.subtitleLabel.text = appID.bundleIdentifier
             cell.bannerView.subtitleLabel.numberOfLines = 2
-            cell.bannerView.subtitleLabel.minimumScaleFactor = 1.0 // Disable font shrinking
             
             let attributedBundleIdentifier = NSMutableAttributedString(string: appID.bundleIdentifier.lowercased(), attributes: [.accessibilitySpeechPunctuation: true])
             
-            if let team = appID.team, let range = attributedBundleIdentifier.string.range(of: team.identifier.lowercased())
+            if let team = appID.team, let range = attributedBundleIdentifier.string.range(of: team.identifier.lowercased()), #available(iOS 13, *)
             {
+                // Prefer to speak the team ID one character at a time.
                 let nsRange = NSRange(range, in: attributedBundleIdentifier.string)
                 attributedBundleIdentifier.addAttributes([.accessibilitySpeechSpellOut: true], range: nsRange)
             }
@@ -150,6 +123,7 @@ private extension AppIDsViewController
             attributedAccessibilityLabel.append(attributedBundleIdentifier)
             cell.bannerView.accessibilityAttributedLabel = attributedAccessibilityLabel
             
+            // Make sure refresh button is correct size.
             cell.layoutIfNeeded()
         }
         
@@ -158,19 +132,14 @@ private extension AppIDsViewController
     
     @objc func fetchAppIDs()
     {
-        self.fetchAppIDsFromServer(completion: nil)
-    }
-    
-    func fetchAppIDsFromServer(completion: (() -> Void)?)
-    {
         guard !self.isLoading else { return }
         self.isLoading = true
         
-        AppManager.shared.syncAppIDs { [weak self] (result) in
-            guard let self = self else { return }
+        AppManager.shared.fetchAppIDs { (result) in
             do
             {
-                try result.get()
+                let (_, context) = try result.get()
+                try context.save()
             }
             catch
             {
@@ -181,75 +150,17 @@ private extension AppIDsViewController
             }
             
             DispatchQueue.main.async {
-                self.didInitialFetch = true
                 self.isLoading = false
-                completion?()
             }
         }
     }
     
     func update()
     {
-        let isInitialLoading = self.isLoading && !self.didInitialFetch
-        
-        if !isInitialLoading
+        if !self.isLoading
         {
-            #if !os(tvOS)
             self.collectionView.refreshControl?.endRefreshing()
-            #endif
             self.activityIndicatorBarButtonItem.isIndicatingActivity = false
-            
-            self.navigationItem.leftBarButtonItem = nil
-            self.navigationItem.rightBarButtonItem = self.doneBarButtonItem
-            
-            #if !os(tvOS)
-            if self.collectionView.refreshControl == nil
-            {
-                let refreshControl = UIRefreshControl()
-                refreshControl.addTarget(self, action: #selector(AppIDsViewController.fetchAppIDs), for: .primaryActionTriggered)
-                self.collectionView.refreshControl = refreshControl
-            }
-            #endif
-        }
-        else
-        {
-            self.activityIndicatorBarButtonItem.isIndicatingActivity = true
-            self.navigationItem.leftBarButtonItem = self.activityIndicatorBarButtonItem
-        }
-    }
-    
-    func footerText() -> String {
-        let count = self.dataSource.itemCount
-        return count == 1
-            ? NSLocalizedString("1 App ID", comment: "")
-            : String(format: NSLocalizedString("%@ App IDs", comment: ""), NSNumber(value: count))
-    }
-    
-    func refreshFooter()
-    {
-        self.footerView?.textLabel.text = self.footerText()
-    }
-    
-    func updateActiveTeam()
-    {
-        Task { @MainActor [weak self] in
-            guard let self = self else { return }
-            let team = try? await AuthManager.shared.getAuthenticatedTeam()
-            if self.activeTeam != team
-            {
-                self.activeTeam = team
-                if let team = self.activeTeam
-                {
-                    self.dataSource.fetchedResultsController.fetchRequest.predicate = NSPredicate(format: "%K == %@", #keyPath(AppID.team.identifier), team.identifier)
-                }
-                else
-                {
-                    self.dataSource.fetchedResultsController.fetchRequest.predicate = NSPredicate(value: false)
-                }
-                try? self.dataSource.fetchedResultsController.performFetch()
-                self.collectionView.reloadData()
-                self.refreshFooter()
-            }
         }
     }
 }
@@ -263,25 +174,14 @@ extension AppIDsViewController: UICollectionViewDelegateFlowLayout
     
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, referenceSizeForHeaderInSection section: Int) -> CGSize
     {
-        // let indexPath = IndexPath(row: 0, section: section)
-        // let headerView = self.collectionView(collectionView, viewForSupplementaryElementOfKind: UICollectionView.elementKindSectionHeader, at: indexPath)
+        let indexPath = IndexPath(row: 0, section: section)
+        let headerView = self.collectionView(collectionView, viewForSupplementaryElementOfKind: UICollectionView.elementKindSectionHeader, at: indexPath)
         
-        // // Use this view to calculate the optimal size based on the collection view's width
-        // let size = headerView.systemLayoutSizeFitting(CGSize(width: collectionView.frame.width, height: UIView.layoutFittingCompressedSize.height),
-        //                                               withHorizontalFittingPriority: .required, // Width is fixed
-        //                                               verticalFittingPriority: .fittingSizeLevel) // Height can be as large as needed
-        // return size
-        
-        // NOTE: double dequeue of cell has been discontinued
-        // TODO: Using harcoded value until this is fixed
-        if let activeTeam = self.activeTeam, activeTeam.type == .free
-        {
-            return CGSize(width: collectionView.bounds.width, height: 220)
-        }
-        else
-        {
-            return CGSize(width: collectionView.bounds.width, height: 160)
-        }
+        // Use this view to calculate the optimal size based on the collection view's width
+        let size = headerView.systemLayoutSizeFitting(CGSize(width: collectionView.frame.width, height: UIView.layoutFittingExpandedSize.height),
+                                                      withHorizontalFittingPriority: .required, // Width is fixed
+                                                      verticalFittingPriority: .fittingSizeLevel) // Height can be as large as needed
+        return size
     }
     
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, referenceSizeForFooterInSection section: Int) -> CGSize
@@ -298,7 +198,7 @@ extension AppIDsViewController: UICollectionViewDelegateFlowLayout
             headerView.layoutMargins.left = self.view.layoutMargins.left
             headerView.layoutMargins.right = self.view.layoutMargins.right
             
-            if let activeTeam = self.activeTeam, activeTeam.type == .free
+            if let activeTeam = DatabaseManager.shared.activeTeam(), activeTeam.type == .free
             {
                 let text = NSLocalizedString("""
                 Each app and app extension installed with SideStore must register an App ID with Apple. Apple limits non-developer Apple IDs to 10 App IDs at a time.
@@ -322,42 +222,20 @@ extension AppIDsViewController: UICollectionViewDelegateFlowLayout
             
         case UICollectionView.elementKindSectionFooter:
             let footerView = collectionView.dequeueReusableSupplementaryView(ofKind: kind, withReuseIdentifier: "Footer", for: indexPath) as! TextCollectionReusableView
-            self.footerView = footerView  // keep direct reference for live updates
-            footerView.textLabel.text = self.footerText()
+            
+            let count = self.dataSource.itemCount
+            if count == 1
+            {
+                footerView.textLabel.text = NSLocalizedString("1 App ID", comment: "")
+            }
+            else
+            {
+                footerView.textLabel.text = String(format: NSLocalizedString("%@ App IDs", comment: ""), NSNumber(value: count))
+            }
+            
             return footerView
             
         default: fatalError()
         }
     }
 }
-
-
-// MARK: - NSFetchedResultsControllerDelegate (proxy)
-extension AppIDsViewController: NSFetchedResultsControllerDelegate
-{
-    func controllerWillChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>)
-    {
-        self.dataSource.controllerWillChangeContent(controller)
-    }
-    
-    func controller(_ controller: NSFetchedResultsController<NSFetchRequestResult>, didChange sectionInfo: NSFetchedResultsSectionInfo, atSectionIndex sectionIndex: Int, for type: NSFetchedResultsChangeType)
-    {
-        self.dataSource.controller(controller, didChange: sectionInfo, atSectionIndex: sectionIndex, for: type)
-    }
-    
-    func controller(_ controller: NSFetchedResultsController<NSFetchRequestResult>, didChange anObject: Any, at indexPath: IndexPath?, for type: NSFetchedResultsChangeType, newIndexPath: IndexPath?)
-    {
-        self.dataSource.controller(controller, didChange: anObject, at: indexPath, for: type, newIndexPath: newIndexPath)
-    }
-    
-    func controllerDidChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>)
-    {
-        // Forward to the data source first so it performs animated cell batch updates
-        self.dataSource.controllerDidChangeContent(controller)
-        
-        DispatchQueue.main.async {
-            self.refreshFooter()
-        }
-    }
-}
-

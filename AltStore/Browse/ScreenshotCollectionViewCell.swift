@@ -6,8 +6,9 @@
 //  Copyright © 2019 Riley Testut. All rights reserved.
 //
 
-@preconcurrency import UIKit
+import UIKit
 
+import Roxas
 
 @objc(ScreenshotCollectionViewCell)
 class ScreenshotCollectionViewCell: UICollectionViewCell

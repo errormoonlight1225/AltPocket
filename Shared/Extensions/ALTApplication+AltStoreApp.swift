@@ -6,14 +6,14 @@
 //  Copyright © 2020 Riley Testut. All rights reserved.
 //
 
-import Foundation
-import SideSign
+import AltSign
 
-extension ALTApplication {
+extension ALTApplication
+{
+    static let altstoreBundleID = "com.SideStore.SideStore"
+    
     var isAltStoreApp: Bool {
-        if self.fileURL.standardizedFileURL == Bundle.Info.activeBundleURL.standardizedFileURL {
-            return true
-        }
-        return self.bundleIdentifier.isAltStoreAppID
+        let isAltStoreApp = self.bundleIdentifier.contains(ALTApplication.altstoreBundleID)
+        return isAltStoreApp
     }
 }

@@ -1,11 +1,13 @@
-default: build			# default target for the "make" command
-
 SHELL := /bin/bash
 .PHONY: help ios update tvos
 
 RUBY := $(shell command -v ruby 2>/dev/null)
+RUST := $(shell command -v rust 2>/dev/null)
+RUSTUP := $(shell command -v rustup 2>/dev/null)
 HOMEBREW := $(shell command -v brew 2>/dev/null)
 BUNDLER := $(shell command -v bundle 2>/dev/null)
+
+default: help
 
 # Add the following 'help' target to your Makefile
 # And add help text after each target name starting with '\#\#'
@@ -70,7 +72,11 @@ help:
 
 ## Install dependencies.
 setup: \
-	pre_setup
+	pre_setup \
+	install_rust \
+	install_rustup \
+	install_rust_toolchain \
+	build_rust_dependencies
 
 # check_for_homebrew \
 # update_homebrew \
@@ -82,6 +88,20 @@ pull_request: \
 
 pre_setup:
 	$(info Project setup…)
+
+check_for_rust:
+	$(info Checking for Rust…)
+
+ifeq ($(RUST),)
+	$(error Rust is not installed.)
+endif
+
+check_for_rustup:
+	$(info Checking for Rustup…)
+
+ifeq ($(RUSTUP),)
+	$(error Rust is not installed.)
+endif
 
 check_for_ruby:
 	$(info Checking for Ruby…)
@@ -133,12 +153,79 @@ pull:
 ## -- Source Code Tasks --
 
 ## Pull upstream and update 3rd party frameworks
-update: submodules
+# update: pull submodules build_rust_dependencies
+update: submodules build_rust_dependencies
 
 submodules:
 	$(info Updating submodules…)
 
-	git submodule update --init --recursive --remote
+	git submodule update --init --recursive
+
+build_rust_dependencies:
+	$(info Building Rust dependencies…)
+
+	pushd Dependencies/em_proxy
+	cargo build --release --target aarch64-apple-ios
+	popd
+	pushd Dependencies/minimuxer
+	cargo build --release --target aarch64-apple-ios
+	popd
+
+install_rustup:
+	$(info Installing Rustup…)
+
+	curl https://sh.rustup.rs -sSf | sh
+	source "$(HOME)/.cargo/env"
+	rustup target add aarch64-apple-ios
+
+# TODO: Add x86, armv7? toolchains
+# https://doc.rust-lang.org/nightly/rustc/platform-support.html
+
+install_cbindgen:
+	$(info Installing cbindgen…)
+
+	cargo install cbindgen
+
+install_rust_toolchain:
+	$(info Installing Rust toolchain…)
+
+	rustup target add aarch64-apple-ios
+
+install_rust_toolchain_ios_sim:
+	$(info Installing Rust iOS Sim toolchain…)
+
+	rustup target add aarch64-apple-ios-sim
+
+install_rust_toolchain_tvos:
+	$(info Installing Rust tvOS toolchain…)
+
+	rustup target add aarch64-apple-tvos
+
+install_rust_toolchain_tvos_sim:
+	$(info Installing Rust tvOS Sim toolchain…)
+
+	rustup target add aarch64-apple-tvos-sim
+
+install_rust_toolchain_watchos_sim:
+	$(info Installing Rust watchOS Sim toolchain…)
+
+	rustup target add aarch64-apple-watchos-sim
+
+install_rust_toolchain_watchos:
+	$(info Installing Rust watchOS toolchain…)
+
+	rustup target add aarch64-apple-watchos
+
+install_rust_toolchain_catalyst:
+	$(info Installing Rust macOS Catalyst toolchain…)
+
+	rustup target add aarch64-apple-ios-macabi
+
+install_rust:
+	$(info Installing Rust…)
+
+	curl https://sh.rustup.rs -sSf | sh
+	source "$(HOME)/.cargo/env"
 
 ## -- QA Task Runners --
 
@@ -155,233 +242,33 @@ test:
 	bundle exec fastlane test
 
 ## -- Building --
-# NOTE: The build config was implicitly 'release' since it was set in AltStore.project
-#       under "use "Release" configuration for commandline builds" setting
-#		so I had just defined it explicitly.
-#
-#       However the scheme used is Debug Scheme, so it was deliberately 
-#       using scheme = Debug and config = Release (so I have kept it as-is) 
-# BUILD_CONFIG ?= Debug		# switched to debug build-config to diagnose issue since debugger won't resolve breakpoints in release
 
-# Overrides (will inherit from env if set already)
-BUILD_CONFIG ?= Release
-MARKETING_VERSION ?= 
-BUNDLE_ID_SUFFIX ?= 
-# Common build settings for xcodebuild
-COMMON_BUILD_SETTINGS = \
-	-project AltStore.xcodeproj \
-	-scheme SideStore \
-	-sdk iphoneos \
-	-configuration $(BUILD_CONFIG) \
-	CODE_SIGNING_REQUIRED=NO \
-	AD_HOC_CODE_SIGNING_ALLOWED=YES \
-	CODE_SIGNING_ALLOWED=NO \
-	DEVELOPMENT_TEAM=XYZ0123456 \
-	ORG_IDENTIFIER=com.SideStore
+developer_ios:
+	$(info Building iOS for Developer profile…)
 
-# Append MARKETING_VERSION if it’s not empty (coz otherwise the blank entry becomes override)
-ifneq ($(strip $(MARKETING_VERSION)),)
-COMMON_BUILD_SETTINGS += MARKETING_VERSION=$(MARKETING_VERSION)
-endif
+	 xcodebuild -project AltStore.xcodeproj -scheme AltStore -sdk iphoneos archive -archivePath ./archive CODE_SIGNING_REQUIRED=NO AD_HOC_CODE_SIGNING_ALLOWED=YES CODE_SIGNING_ALLOWED=NO DEVELOPMENT_TEAM=XYZ0123456 ORG_IDENTIFIER=com.SideStore | xcpretty
 
-# Append BUNDLE_ID_SUFFIX if it’s not empty (coz otherwise the blank entry becomes override)
-ifneq ($(strip $(BUNDLE_ID_SUFFIX)),)
-COMMON_BUILD_SETTINGS += BUNDLE_ID_SUFFIX=$(BUNDLE_ID_SUFFIX)
-endif
+developer_tvos:
+	$(info Building tvOS for Developer profile…)
 
-build:
-	@echo ">>>>>>>>> BUILD_CONFIG is set to '$(BUILD_CONFIG)', Building for $(BUILD_CONFIG) mode! <<<<<<<<<<"
-	@echo ""
-	@xcodebuild archive -archivePath ./SideStore \
-		$(COMMON_BUILD_SETTINGS)
+	 xcodebuild -project AltStore.xcodeproj -scheme AltStore -sdk tvos archive -archivePath ./archive CODE_SIGNING_REQUIRED=NO AD_HOC_CODE_SIGNING_ALLOWED=YES CODE_SIGNING_ALLOWED=NO DEVELOPMENT_TEAM=XYZ0123456 ORG_IDENTIFIER=com.SideStore | xcpretty
 
-build-and-test:
-	@rm -rf build/tests/test-results.xcresult
-	@echo ">>>>>>>>> BUILD_CONFIG is set to '$(BUILD_CONFIG)', Building for $(BUILD_CONFIG) mode! <<<<<<<<<<"
-	@echo ""
-	@echo "Performing a build and running tests..."
-	@xcodebuild test \
-		-destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.0' \
-		-resultBundlePath build/tests/test-results.xcresult \
-    	-enableCodeCoverage YES \
-		$(COMMON_BUILD_SETTINGS)
+## Update & build for iOS
+ios: | update developer_ios
 
-build-tests:
-	@rm -rf build/tests/test-results.xcresult
-	@echo ">>>>>>>>> BUILD_CONFIG is set to '$(BUILD_CONFIG)', Building Tests for $(BUILD_CONFIG) mode! <<<<<<<<<<"
-	@echo ""
-	@echo "Performing a build-for-testing..."
-	@xcodebuild build-for-testing \
-    	-enableCodeCoverage YES \
-		-destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.0' \
-		$(COMMON_BUILD_SETTINGS)
+## Update & build for tvOS
+tvos: | update developer_tvos
 
-run-tests:
-	@rm -rf build/tests/test-results.xcresult
-	@echo ">>>>>>>>> BUILD_CONFIG is set to '$(BUILD_CONFIG)', Testing for $(BUILD_CONFIG) mode! <<<<<<<<<<"
-	@echo ""
-	@echo "Performing a test-without-building..."
-	@xcodebuild test-without-building \
-    	-enableCodeCoverage YES \
-		-resultBundlePath build/tests/test-results.xcresult \
-		-destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.0' \
-		$(COMMON_BUILD_SETTINGS)
+## Open the workspace
+open:
+	open AltStore.xcodeproj
 
-boot-sim-async:
-	@if xcrun simctl list devices "iPhone 17 Pro" | grep -q "Booted"; then \
-		echo "Simulator 'iPhone 17 Pro' is already booted."; \
-	else \
-		echo "Booting simulator 'iPhone 17 Pro' asynchronously..."; \
-		xcrun simctl boot "iPhone 17 Pro" & \
-		echo "Simulator boot command dispatched."; \
+## tag and release to github
+release: | _var_VERSION
+	@if ! git diff --quiet HEAD; then \
+		( $(call _error,refusing to release with uncommitted changes) ; exit 1 ); \
 	fi
-
-sim-boot-check:
-	@echo "Checking simulator boot status..."
-	@if xcrun simctl list devices "iPhone 17 Pro" | grep -q "Booted"; then \
-		echo "Simulator 'iPhone 17 Pro' is booted."; \
-	else \
-		echo "Simulator bootup failed or is not booted yet."; \
-		exit 1; \
-	fi
-
-clean-build:
-	@echo "Cleaning build artifacts..."
-	@xcodebuild clean -project AltStore.xcodeproj -scheme SideStore
-
-fakesign-apps:
-	ldid -SAltStore/Resources/ReleaseEntitlements.plist SideStore.xcarchive/Products/Applications/SideStore.app/SideStore
-	ldid -SAltWidget/Resources/ReleaseEntitlements.plist SideStore.xcarchive/Products/Applications/SideStore.app/PlugIns/AltWidgetExtension.appex/AltWidgetExtension
-
-fakesign-sidebackup:	
-	@echo ''
-	@echo "fake-signing sidebackup even though it will get resigned, only to retain its entitlements (appGroups)"
-	unzip -q -o SideStore.xcarchive/Products/Applications/SideStore.app/SideBackup.ipa -d SideStore.xcarchive/Products/Applications/SideStore.app/
-	ldid -SSideBackup/SideBackup.entitlements SideStore.xcarchive/Products/Applications/SideStore.app/Payload/SideBackup.app/SideBackup
-	pushd "SideStore.xcarchive/Products/Applications/SideStore.app/"  > /dev/null; \
-	rm -f     SideBackup.ipa; \
-	zip -r SideBackup.ipa Payload; \
-	popd  > /dev/null
-	@rm -rf SideStore.xcarchive/Products/Applications/SideStore.app/Payload
-
-fakesign: fakesign-apps fakesign-sidebackup				
-
-
-ipa:
-	@echo ''
-	@echo "fake-signing sidestore"
-	mkdir -p Payload/SideStore.app
-	cp -R SideStore.xcarchive/Products/Applications/SideStore.app/ Payload/SideStore.app/
-	rm -f     SideStore.ipa
-	zip -r SideStore.ipa Payload
-	rm -rf Payload*/
-
-# Global Variables
-
-# Ensure this is set by the environment or passed as an argument
-CONFIGURATION_BUILD_DIR ?= # this is the path to your main app (possibly in derived-data unless changed manually)
-CODESIGNING_FOLDER_PATH ?= # this is the path to your main app (possibly in derived-data unless changed manually)
-
-# CONFIGURATION_BUILD_DIR = # this is the path to your main app (possibly in derived-data unless changed manually)
-# CODESIGNING_FOLDER_PATH = # this is the path to your main app (possibly in derived-data unless changed manually)
-
-ROOT_DIR 			:= $(CONFIGURATION_BUILD_DIR)
-ROOT_DIR 			:= $(if $(ROOT_DIR),$(ROOT_DIR),$(if $(CODESIGNING_FOLDER_PATH),$(CODESIGNING_FOLDER_PATH)/..,))
-VAR_USED			:= $(if $(CONFIGURATION_BUILD_DIR),"CONFIGURATION_BUILD_DIR",$(if $(CODESIGNING_FOLDER_PATH),"CODESIGNING_FOLDER_PATH","?"))
-
-TARGET_BUILD_DIR 	:= build
-TARGET_ARCHIVE_DIR 	:= sidebackup.xcarchive
-TARGET_NAME 		:= SideBackup.app
-TARGET_DSYM_NAME 	:= SideBackup.app.dSYM
-TARGET_IPA_NAME 	:= SideBackup.ipa
-
-
-ALT_APP_SRC_PARENT 	:= $(shell readlink -f "$(ROOT_DIR)")
-ALT_APP_SRC 		:= $(ALT_APP_SRC_PARENT)/$(TARGET_NAME)
-ALT_APP_DSYM_SRC 	:= $(ALT_APP_SRC_PARENT)/$(TARGET_DSYM_NAME)
-ALT_APP_DST_ARCHIVE := "$(TARGET_BUILD_DIR)/$(TARGET_ARCHIVE_DIR)"
-ALT_APP_DST 		:= "$(ALT_APP_DST_ARCHIVE)/Products/Applications/$(TARGET_NAME)"
-ALT_APP_DSYM_DST 	:= "$(ALT_APP_DST_ARCHIVE)/dSYMs/$(TARGET_DSYM_NAME)"
-ALT_APP_PAYLOAD_DST := "$(ALT_APP_DST_ARCHIVE)/Payload"
-ALT_APP_IPA_DST 	:= "$(TARGET_BUILD_DIR)/$(TARGET_IPA_NAME)"
-
-checkPaths:
-	@# Check if ALT_APP_SRC_PARENT is empty, abort if true
-	@if [ -z "$(ALT_APP_SRC_PARENT)" ]; then \
-		echo "Error: ALT_APP_SRC_PARENT is empty!"; \
-		echo "       Environment variable $(VAR_USED) = $(APP_PATH)"; \
-		echo "       Environment variable CONFIGURATION_BUILD_DIR and CODESIGNING_FOLDER_PATH both are empty or not defined"; \
-		echo "       Please set CONFIGURATION_BUILD_DIR or CODESIGNING_FOLDER_PATH to a valid build artifacts directory"; \
-		echo ""; \
-		exit 1; \
-	fi
-
-
-copy-sidebackup: checkPaths
-	@echo ''
-	@echo "  CONFIGURATION_BUILD_DIR = '$(CONFIGURATION_BUILD_DIR)'"
-	@echo "  CODESIGNING_FOLDER_PATH = '$(CODESIGNING_FOLDER_PATH)'"
-	@echo "  Copying archive data from ALT_APP_SRC_PARENT = '$(ALT_APP_SRC_PARENT)'"
-	@echo ''
-
-	@bash -c '\
-		SOURCES=("$(ALT_APP_SRC)" "$(ALT_APP_DSYM_SRC)"); \
-		TARGETS=("$(ALT_APP_DST)" "$(ALT_APP_DSYM_DST)"); \
-		TARGET_NAMES=("$(TARGET_NAME)" "$(TARGET_DSYM_NAME)"); \
-		\
-		for i in "$${!SOURCES[@]}"; do \
-			SRC="$${SOURCES[$$i]}"; \
-			TGT="$${TARGETS[$$i]}"; \
-			TGT_NAME="$${TARGET_NAMES[$$i]}"; \
-			\
-			echo "  Copying $$TGT_NAME from \"$$SRC\""; \
-			if [ ! -d "$$SRC" ]; then \
-				echo "SRC=$$SRC ALT_APP_DSYM_SRC=$(ALT_APP_DSYM_SRC)"; \
-				if [ "$$SRC" == "$(ALT_APP_DSYM_SRC)" ]; then \
-					echo "Warning: $$TGT_NAME not found in \"$$SRC\" - IGNORED"; \
-					echo ""; \
-				else \
-					echo "Error: $$TGT_NAME not found in \"$$SRC\""; \
-					echo ""; \
-					exit 1; \
-				fi \
-			else \
-				rm -rf "$$TGT"; \
-				mkdir -p "$$TGT"; \
-				cp -R -f "$(ALT_APP_SRC_PARENT)/$$TGT_NAME/." "$$TGT"; \
-				echo "  Copied  $$TGT_NAME into TARGET = $$TGT"; \
-				echo ""; \
-			fi; \
-		done \
-	'
-	@find "$(ALT_APP_DST_ARCHIVE)" -maxdepth 4 -exec ls -ld {} + || true
-	@echo ''
-
-# fakesign-sidebackup: copy-sidebackup
-# 	@echo "  Adding homebrew binaries to path and invoke ldid"
-# 	@export PATH="/usr/local/bin:/opt/homebrew/bin:$$PATH"; \
-# 	ldid -SSideBackup/Resources/ReleaseEntitlements.plist $(ALT_APP)
-# 	@echo "  fakesign completed"
-# 	@echo ""
-	
-# ipa-sidebackup:
-ipa-sidebackup: checkPaths copy-sidebackup 
-# ipa-sidebackup: checkPaths copy-sidebackup fakesign-sidebackup
-	@echo "  Creating IPA for SideBackup"
-	@rm -rf 	"$(ALT_APP_PAYLOAD_DST)"
-	@mkdir -p 	"$(ALT_APP_PAYLOAD_DST)/$(TARGET_NAME)"
-	@echo " Copying from $(ALT_APP_SRC) into $(ALT_APP_PAYLOAD_DST)"
-	@cp -R -f	"$(ALT_APP_SRC)/." "$(ALT_APP_PAYLOAD_DST)/$(TARGET_NAME)"
-	@pushd 		"$(ALT_APP_DST_ARCHIVE)" && zip -r "../../$(ALT_APP_IPA_DST)" Payload || popd
-	@echo "  IPA created: build/SideBackup.ipa"
-
-clean-sidebackup:
-	@echo ""
-	@echo "====> Cleaning up SideBackup related artifacts <===="
-	@rm -rf build/sidebackup.xcarchive/
-	@rm -f build/SideBackup.ipa
-    #@rm -f AltStore/Resources/SideBackup.ipa
-
-clean: clean-sidebackup
-	@rm -rf SideStore.ipa
-	@rm -rf build/
+	test
+	package
+	make --no-print-directory _tag VERSION=$(VERSION)
+	make --no-print-directory _push VERSION=$(VERSION)

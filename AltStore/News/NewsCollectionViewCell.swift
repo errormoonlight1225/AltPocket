@@ -6,9 +6,9 @@
 //  Copyright © 2019 Riley Testut. All rights reserved.
 //
 
-@preconcurrency import UIKit
+import UIKit
 
-final class NewsCollectionViewCell: UICollectionViewCell
+class NewsCollectionViewCell: UICollectionViewCell
 {
     @IBOutlet var titleLabel: UILabel!
     @IBOutlet var captionLabel: UILabel!
@@ -18,9 +18,6 @@ final class NewsCollectionViewCell: UICollectionViewCell
     override func awakeFromNib()
     {
         super.awakeFromNib()
-        
-        let descriptor = UIFontDescriptor.preferredFontDescriptor(withTextStyle: .title2).bolded()
-        self.titleLabel.font = UIFont(descriptor: descriptor, size: 0.0)
         
         self.contentView.preservesSuperviewLayoutMargins = true
         

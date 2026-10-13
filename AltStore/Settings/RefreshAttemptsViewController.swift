@@ -6,18 +6,20 @@
 //  Copyright © 2019 Riley Testut. All rights reserved.
 //
 
-@preconcurrency import UIKit
-import CoreData
+import UIKit
+
+import AltStoreCore
+import Roxas
 
 @objc(RefreshAttemptTableViewCell)
-private final class RefreshAttemptTableViewCell: UITableViewCell
+private class RefreshAttemptTableViewCell: UITableViewCell
 {
     @IBOutlet var successLabel: UILabel!
     @IBOutlet var dateLabel: UILabel!
     @IBOutlet var errorDescriptionLabel: UILabel!
 }
 
-final class RefreshAttemptsViewController: UITableViewController
+class RefreshAttemptsViewController: UITableViewController
 {
     private lazy var dataSource = self.makeDataSource()
     
@@ -33,19 +35,18 @@ final class RefreshAttemptsViewController: UITableViewController
         super.viewDidLoad()
         
         self.tableView.dataSource = self.dataSource
-        self.dataSource.contentView = self.tableView
     }
 }
 
 private extension RefreshAttemptsViewController
 {
-    func makeDataSource() -> FetchedResultsTableViewDataSource<RefreshAttempt>
+    func makeDataSource() -> RSTFetchedResultsTableViewDataSource<RefreshAttempt>
     {
         let fetchRequest = RefreshAttempt.fetchRequest() as NSFetchRequest<RefreshAttempt>
         fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \RefreshAttempt.date, ascending: false)]
         fetchRequest.returnsObjectsAsFaults = false
         
-        let dataSource = FetchedResultsTableViewDataSource(fetchRequest: fetchRequest, managedObjectContext: DatabaseManager.shared.viewContext)
+        let dataSource = RSTFetchedResultsTableViewDataSource(fetchRequest: fetchRequest, managedObjectContext: DatabaseManager.shared.viewContext)
         dataSource.cellConfigurationHandler = { [weak self] (cell, attempt, indexPath) in
             let cell = cell as! RefreshAttemptTableViewCell
             cell.dateLabel.text = self?.dateFormatter.string(from: attempt.date)
@@ -63,7 +64,7 @@ private extension RefreshAttemptsViewController
             }
         }
         
-        let placeholderView = PlaceholderView()
+        let placeholderView = RSTPlaceholderView()
         placeholderView.textLabel.text = NSLocalizedString("No Refresh Attempts", comment: "")
         placeholderView.detailTextLabel.text = NSLocalizedString("The more you use SideStore, the more often iOS will allow it to refresh apps in the background.", comment: "")
         dataSource.placeholderView = placeholderView

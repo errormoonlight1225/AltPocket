@@ -6,7 +6,7 @@
 //  Copyright © 2020 Riley Testut. All rights reserved.
 //
 
-@preconcurrency import UIKit
+import UIKit
 
 class TextCollectionReusableView: UICollectionReusableView
 {

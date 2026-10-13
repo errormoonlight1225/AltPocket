@@ -6,19 +6,17 @@
 //  Copyright © 2019 Riley Testut. All rights reserved.
 //
 
-@preconcurrency import UIKit
+import UIKit
 
-final class LicensesViewController: UIViewController
+class LicensesViewController: UIViewController
 {
     private var _didAppear = false
     
     @IBOutlet private var textView: UITextView!
     
-    #if !os(tvOS)
     override var preferredStatusBarStyle: UIStatusBarStyle {
         return .lightContent
     }
-    #endif
     
     override func viewWillAppear(_ animated: Bool)
     {

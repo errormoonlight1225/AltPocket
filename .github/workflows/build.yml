@@ -1,0 +1,61 @@
+name: Build AltPocket iOS 12
+on:
+  workflow_dispatch:
+  push:
+    branches: [develop]
+permissions:
+  contents: read
+concurrency:
+  group: altpocket-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      IPHONEOS_DEPLOYMENT_TARGET: '12.0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Select Xcode 15.4
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.4'
+      - name: Install project tools
+        run: |
+          gem install xcodeproj --no-document --user-install
+          echo "$(ruby -e 'puts Gem.user_dir')/bin" >> "$GITHUB_PATH"
+      - name: Configure iOS 12 app and VPN extension
+        run: ruby scripts/configure.rb
+      - name: Install Rust target
+        run: rustup target add aarch64-apple-ios
+      - name: Build native protocol libraries
+        run: |
+          cargo build --manifest-path Dependencies/em_proxy/Cargo.toml --release --lib --target aarch64-apple-ios
+          cargo build --manifest-path Dependencies/minimuxer/Cargo.toml --release --lib --target aarch64-apple-ios
+      - name: Archive unsigned application
+        run: |
+          set -o pipefail
+          xcodebuild -project AltStore.xcodeproj -scheme AltStore -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -archivePath "$PWD/build/AltPocket.xcarchive" archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM=XYZ0123456 ORG_IDENTIFIER=io.altpocket COMPILER_INDEX_STORE_ENABLE=NO | tee build.log
+      - name: Package and inspect IPA
+        run: python3 scripts/package.py
+      - name: Upload IPA and source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: AltPocket-iOS12-unsigned
+          path: |
+            build/AltPocket-unsigned.ipa
+            build/BUILD-REPORT.txt
+            build/AltPocket-source.tar.gz
+          if-no-files-found: error
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AltPocket-build-logs
+          path: |
+            build.log
+            Dependencies/minimuxer/Cargo.lock
+            Dependencies/em_proxy/Cargo.lock
+          if-no-files-found: ignore

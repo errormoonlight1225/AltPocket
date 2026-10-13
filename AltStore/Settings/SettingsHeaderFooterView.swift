@@ -6,10 +6,11 @@
 //  Copyright © 2019 Riley Testut. All rights reserved.
 //
 
-@preconcurrency import UIKit
+import UIKit
 
+import Roxas
 
-final class SettingsHeaderFooterView: UITableViewHeaderFooterView
+class SettingsHeaderFooterView: UITableViewHeaderFooterView
 {
     @IBOutlet var primaryLabel: UILabel!
     @IBOutlet var secondaryLabel: UILabel!

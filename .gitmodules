@@ -1,11 +1,24 @@
-#sidestore dependencies
-
+[submodule "Dependencies/Roxas"]
+	path = Dependencies/Roxas
+	url = https://github.com/rileytestut/Roxas.git
+[submodule "Dependencies/libimobiledevice"]
+	path = Dependencies/libimobiledevice
+	url = https://github.com/libimobiledevice/libimobiledevice
+[submodule "Dependencies/libusbmuxd"]
+	path = Dependencies/libusbmuxd
+	url = https://github.com/libimobiledevice/libusbmuxd.git
+[submodule "Dependencies/libplist"]
+	path = Dependencies/libplist
+	url = https://github.com/libimobiledevice/libplist.git
+[submodule "Dependencies/MarkdownAttributedString"]
+	path = Dependencies/MarkdownAttributedString
+	url = https://github.com/chockenberry/MarkdownAttributedString.git
+[submodule "Dependencies/em_proxy"]
+	path = Dependencies/em_proxy
+	url = https://github.com/jkcoxson/em_proxy
+[submodule "Dependencies/libimobiledevice-glue"]
+	path = Dependencies/libimobiledevice-glue
+	url = https://github.com/libimobiledevice/libimobiledevice-glue
 [submodule "Dependencies/minimuxer"]
-    path = Dependencies/minimuxer
-    url = https://github.com/SideStore/minimuxer
-    branch = develop
-[submodule "Dependencies/SideSign"]
-	path = Dependencies/SideSign
-	url = https://github.com/SideStore/SideSign
-	branch = main
-
+	path = Dependencies/minimuxer
+	url = https://github.com/jkcoxson/minimuxer

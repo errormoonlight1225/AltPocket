@@ -6,9 +6,10 @@
 //  Copyright © 2020 Riley Testut. All rights reserved.
 //
 
-#if !os(tvOS)
 import Intents
 
+// Requires iOS 14 in-app intent handling.
+@available(iOS 14, *)
 extension INInteraction
 {
     static func refreshAllApps() -> INInteraction
@@ -20,4 +21,3 @@ extension INInteraction
         return interaction
     }
 }
-#endif

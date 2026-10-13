@@ -6,11 +6,10 @@
 //  Copyright © 2019 Riley Testut. All rights reserved.
 //
 
-@preconcurrency import UIKit
+import UIKit
 
-final class ForwardingNavigationController: UINavigationController
+class ForwardingNavigationController: UINavigationController
 {
-#if !os(tvOS)
     override var childForStatusBarStyle: UIViewController? {
         return self.topViewController
     }
@@ -18,5 +17,4 @@ final class ForwardingNavigationController: UINavigationController
     override var childForStatusBarHidden: UIViewController? {
         return self.topViewController
     }
-#endif
 }

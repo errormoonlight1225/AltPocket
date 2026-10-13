@@ -1,0 +1,3 @@
+#include "Build.xcconfig"
+
+PRODUCT_BUNDLE_IDENTIFIER = $(EXTENSION_PREFIX).AltWidget

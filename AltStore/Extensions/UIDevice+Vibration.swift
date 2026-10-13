@@ -6,7 +6,6 @@
 //  Copyright © 2021 Riley Testut. All rights reserved.
 //
 
-@preconcurrency import UIKit
 import AudioToolbox
 import CoreHaptics
 
@@ -17,6 +16,7 @@ private extension SystemSoundID
     static let tryAgain = SystemSoundID(1102)
 }
 
+@available(iOS 13, *)
 extension UIDevice
 {
     enum VibrationPattern
@@ -26,6 +26,7 @@ extension UIDevice
     }
 }
 
+@available(iOS 13, *)
 extension UIDevice
 {
     var isVibrationSupported: Bool {

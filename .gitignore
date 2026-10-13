@@ -1,18 +1,14 @@
 # macOS
 #
-**/*.DS_Store
+*.DS_Store
 
 # Xcode
 #
 
-## CocoaPods
-Pods/
-
 ## Build generated
 build/
 DerivedData
-
-SideStore.xcarchive
+archive.xcarchive
 ## Various settings
 *.pbxuser
 !default.pbxuser
@@ -34,73 +30,14 @@ xcuserdata
 *.hmap
 /newrelic_agent.log
 /CodeSigning.xcconfig
-/local.xcconfig
 /.vscode
 
 ## AppCode specific
 .idea/
-
-Payload/
-**/SideStore.ipa
-**/SideBackup.ipa
-**/*.dSYM
-
-Dependencies/.*-prebuilt-fetch-*
-SideStore/minimuxer/*
-SideStore/em_proxy/*
-!Dependencies/**/.gitkeep
-.nightly-build-num
-
-## em_proxy and minimuxer biaries
-**/.last-prebuilt-fetch-em_proxy
-**/.last-prebuilt-fetch-minimuxer
-
-# misc
-**/output.txt
-SideStore/.skip-prebuilt-fetch-minimuxer
-SideStore/.skip-prebuilt-fetch-em_proxy
-
-.git.bkp/
-
-
-# some more commandline build artifacts
-test-recording.mp4
-test-recording.log
-altstore-sources.md
-local-build.sh
-
-source-metadata.json
-release-notes.md
-*.md
-!README.md
-!CONTRIBUTING.md
-!CERTIFICATE-OF-ORIGIN.md
-!AGENTS.md
-!CLAUDE.md
-!GEMINI.md
-*.log
-*.pdf
-*.txt
-
-Dependencies/minimuxer-*/
-.test/
-
-local/
-Dependencies/idevice/
-
-// crash reports
-*.ips
-**/*.ips
-
-// local dirs (scratch pad dirs)
-local/
-local
-tmp/
-tmp
-*.log
-*.zip
-*.mp4
-*.mp3
-
-scratch*.sh
-*.sh
+# Local-only and build output
+build/
+__pycache__/
+*.pyc
+*.mobiledevicepairing
+*.p12
+*.mobileprovision

@@ -6,370 +6,293 @@
 //  Copyright © 2020 Riley Testut. All rights reserved.
 //
 
-@preconcurrency import UIKit
+import UIKit
 import CoreData
-import Nuke
+
+import AltStoreCore
+import Roxas
+
+struct SourceError: LocalizedError
+{
+    enum Code
+    {
+        case unsupported
+    }
+    
+    var code: Code
+    @Managed var source: Source
+    
+    var errorDescription: String? {
+        switch self.code
+        {
+        case .unsupported: return String(format: NSLocalizedString("The source “%@” is not supported by this version of SideStore.", comment: ""), self.$source.name)
+        }
+    }
+}
 
 @objc(SourcesFooterView)
-private final class SourcesFooterView: TextCollectionReusableView
+private class SourcesFooterView: TextCollectionReusableView
 {
     @IBOutlet var activityIndicatorView: UIActivityIndicatorView!
     @IBOutlet var textView: UITextView!
 }
 
-private extension UIAction.Identifier
+extension SourcesViewController
 {
-    static let showDetails = UIAction.Identifier("io.sidestore.showDetails")
-    static let showError = UIAction.Identifier("io.sidestore.showError")
+    private enum Section: Int, CaseIterable
+    {
+        case added
+        case trusted
+    }
 }
 
-final class SourcesViewController: UICollectionViewController
+class SourcesViewController: UICollectionViewController
 {
     var deepLinkSourceURL: URL? {
         didSet {
-            self.handleAddSourceDeepLink()
+            guard let sourceURL = self.deepLinkSourceURL else { return }
+            self.addSource(url: sourceURL)
         }
     }
     
     private lazy var dataSource = self.makeDataSource()
+    private lazy var addedSourcesDataSource = self.makeAddedSourcesDataSource()
+    private lazy var trustedSourcesDataSource = self.makeTrustedSourcesDataSource()
     
-    private weak var _installingApp: StoreApp?
-    
-    private var placeholderView: PlaceholderView!
-    private var placeholderViewButton: UIButton!
-    private var placeholderViewCenterYConstraint: NSLayoutConstraint!
-    
+    private var fetchTrustedSourcesOperation: FetchTrustedSourcesOperation?
+    private var fetchTrustedSourcesResult: Result<Void, Error>?
+    private var _fetchTrustedSourcesContext: NSManagedObjectContext?
+        
     override func viewDidLoad()
     {
         super.viewDidLoad()
         
-        // Ensure large titles
-        #if !os(tvOS)
-        navigationController?.navigationBar.prefersLargeTitles = true
-        navigationItem.largeTitleDisplayMode = .automatic
-        #endif
-
-        // Set title
-        navigationItem.title = "Sources"
-        navigationController?.navigationBar.layoutMargins.left = 20
-        
-        let layout = self.makeLayout()
-        self.collectionView.collectionViewLayout = layout
-        
-        self.navigationController?.view.tintColor = .altPrimary
-        
-        self.collectionView.register(AppBannerCollectionViewCell.self, forCellWithReuseIdentifier: CellContentGenericCellIdentifier)
-        
         self.collectionView.dataSource = self.dataSource
-        self.collectionView.prefetchDataSource = self.dataSource
-        self.dataSource.contentView = self.collectionView
-        self.collectionView.allowsSelectionDuringEditing = false
         
-        let backgroundView = UIView(frame: .zero)
-        backgroundView.backgroundColor = .altBackground
-        self.collectionView.backgroundView = backgroundView
+        #if !BETA
+        // Hide "Add Source" button for public version while in beta.
+        self.navigationItem.leftBarButtonItem = nil
+        #endif
+    }
+    
+    override func viewWillAppear(_ animated: Bool)
+    {
+        super.viewWillAppear(animated)
         
-        self.placeholderView = PlaceholderView(frame: .zero)
-        self.placeholderView.translatesAutoresizingMaskIntoConstraints = false
-        self.placeholderView.textLabel.text = NSLocalizedString("Add More Sources!", comment: "")
-        self.placeholderView.detailTextLabel.text = NSLocalizedString("Sources determine what apps are available in SideStore. The more sources you add, the better your SideStore experience will be.\n\nDon’t know where to start? Try adding one of our Recommended Sources!", comment: "")
-        self.placeholderView.detailTextLabel.textAlignment = .natural
-        backgroundView.addSubview(self.placeholderView)
+        if self.deepLinkSourceURL != nil
+        {
+            self.navigationItem.leftBarButtonItem?.isIndicatingActivity = true
+        }
         
-        let fontDescriptor = UIFontDescriptor.preferredFontDescriptor(withTextStyle: .title3).bolded()
-        self.placeholderView.textLabel.font = UIFont(descriptor: fontDescriptor, size: 0.0)
-        self.placeholderView.detailTextLabel.font = UIFont.preferredFont(forTextStyle: .body)
-        self.placeholderView.detailTextLabel.textAlignment = .natural
-        
-        self.placeholderViewButton = UIButton(type: .system, primaryAction: UIAction(title: NSLocalizedString("View Recommended Sources", comment: "")) { [weak self] _ in
-            self?.performSegue(withIdentifier: "addSource", sender: nil)
-        })
-        self.placeholderViewButton.titleLabel?.font = UIFont.preferredFont(forTextStyle: .body)
-        self.placeholderView.stackView.spacing = 15
-        self.placeholderView.stackView.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 15, leading: 15, bottom: 15, trailing: 15)
-        self.placeholderView.stackView.isLayoutMarginsRelativeArrangement = true
-        self.placeholderView.stackView.addArrangedSubview(self.placeholderViewButton)
-        
-        self.placeholderViewCenterYConstraint = self.placeholderView.safeAreaLayoutGuide.centerYAnchor.constraint(equalTo: backgroundView.centerYAnchor, constant: 0)
-        
-        NSLayoutConstraint.activate([
-            self.placeholderViewCenterYConstraint,
-            self.placeholderView.centerXAnchor.constraint(equalTo: backgroundView.centerXAnchor),
-            self.placeholderView.leadingAnchor.constraint(equalTo: backgroundView.leadingAnchor),
-            self.placeholderView.trailingAnchor.constraint(equalTo: backgroundView.trailingAnchor),
-            
-            self.placeholderView.topAnchor.constraint(equalTo: self.placeholderView.stackView.topAnchor),
-            self.placeholderView.bottomAnchor.constraint(equalTo: self.placeholderView.stackView.bottomAnchor),
-        ])
-
-        // self.navigationItem.rightBarButtonItem = self.editButtonItem
-        
-        NotificationCenter.default.addObserver(self, selector: #selector(SourcesViewController.showInstallingAppToastView(_:)), name: AppManager.willInstallAppFromNewSourceNotification, object: nil)
-        
-        self.update()
+        if self.fetchTrustedSourcesOperation == nil
+        {
+            self.fetchTrustedSources()
+        }
     }
     
     override func viewDidAppear(_ animated: Bool)
     {
         super.viewDidAppear(animated)
         
-        self.handleAddSourceDeepLink()
-    }
-    
-    override func viewDidLayoutSubviews() 
-    {
-        super.viewDidLayoutSubviews()
-        
-        // Vertically center placeholder view in gap below first item.
-        
-        let indexPath = IndexPath(item: 0, section: 0)
-        guard let layoutAttributes = self.collectionView.layoutAttributesForItem(at: indexPath) else { return }
-        
-        let maxY = layoutAttributes.frame.maxY
-        
-        let constant = maxY / 2
-        if self.placeholderViewCenterYConstraint.constant != constant
+        if let sourceURL = self.deepLinkSourceURL
         {
-            self.placeholderViewCenterYConstraint.constant = constant
+            self.addSource(url: sourceURL)
         }
     }
 }
 
 private extension SourcesViewController
 {
-    func makeLayout() -> UICollectionViewCompositionalLayout
+    func makeDataSource() -> RSTCompositeCollectionViewDataSource<Source>
     {
-        var configuration = UICollectionLayoutListConfiguration(appearance: .grouped)
-        #if !os(tvOS)
-        configuration.showsSeparators = false
-        #endif
-        configuration.backgroundColor = .clear
-        
-        #if !os(tvOS)
-        configuration.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
-            guard let self else { return UISwipeActionsConfiguration(actions: []) }
-            
-            let source = self.dataSource.item(at: indexPath)
-            var actions: [UIContextualAction] = []
-            
-            if source.identifier != Source.altStoreIdentifier
-            {
-                // Prevent users from removing AltStore source.
-                
-                let removeAction = UIContextualAction(style: .destructive,
-                                                      title: NSLocalizedString("Remove", comment: "")) { _, _, completion in
-                    self.remove(source, completionHandler: completion)
-                }
-                removeAction.image = UIImage(systemName: "trash.fill")
-                
-                actions.append(removeAction)
-            }
-            
-            if let error = source.error
-            {
-                let viewErrorAction = UIContextualAction(style: .normal,
-                                                         title: NSLocalizedString("View Error", comment: "")) { _, _, completion in
-                    self.present(error)
-                    completion(true)
-                }
-                viewErrorAction.backgroundColor = .systemYellow
-                viewErrorAction.image = UIImage(systemName: "exclamationmark.circle.fill")
-                
-                actions.append(viewErrorAction)
-            }
-            
-            let config = UISwipeActionsConfiguration(actions: actions)
-            config.performsFirstActionWithFullSwipe = false
-            
-            return config
-        }
-        #endif
-        
-        let layout = UICollectionViewCompositionalLayout.list(using: configuration)
-        return layout
-    }
-    
-    func makeDataSource() -> FetchedResultsCollectionViewPrefetchingDataSource<Source, UIImage>
-    {
-        // TODO: @mahee96: Need implementation to keep SideStore-Official source always on top
-        let fetchRequest = Source.fetchRequest() as NSFetchRequest<Source>
-        fetchRequest.returnsObjectsAsFaults = false
-        fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \Source.name, ascending: true),
-                                        
-                                        // Can't sort by URLs or else app will crash.
-                                        // NSSortDescriptor(keyPath: \Source.sourceURL, ascending: true),
-                                        
-                                        NSSortDescriptor(keyPath: \Source.identifier, ascending: true)]
-        
-        let fetchedResultsController = NSFetchedResultsController(fetchRequest: fetchRequest, managedObjectContext: DatabaseManager.shared.viewContext, sectionNameKeyPath: nil, cacheName: nil)
-        fetchedResultsController.delegate = self
-        
-        let dataSource = FetchedResultsCollectionViewPrefetchingDataSource<Source, UIImage>(fetchedResultsController: fetchedResultsController)
+        let dataSource = RSTCompositeCollectionViewDataSource<Source>(dataSources: [self.addedSourcesDataSource, self.trustedSourcesDataSource])
         dataSource.proxy = self
-        dataSource.cellConfigurationHandler = { [weak self] (cell, source, indexPath) in
-            guard let self else { return }
-                        
-            let cell = cell as! AppBannerCollectionViewCell
-            cell.layoutMargins.top = 5
-            cell.layoutMargins.bottom = 5
+        dataSource.cellConfigurationHandler = { (cell, source, indexPath) in
+            let tintColor = UIColor.altPrimary
+            
+            let cell = cell as! BannerCollectionViewCell
             cell.layoutMargins.left = self.view.layoutMargins.left
             cell.layoutMargins.right = self.view.layoutMargins.right
+            cell.tintColor = tintColor
+                        
+            cell.bannerView.iconImageView.isHidden = true
+            cell.bannerView.buttonLabel.isHidden = true
+            cell.bannerView.button.isIndicatingActivity = false
             
-            cell.bannerView.configure(for: source)
-            
-            cell.bannerView.iconImageView.image = nil
-            cell.bannerView.iconImageView.isIndicatingActivity = true
-            
-            let numberOfApps = source.apps.filter { StoreApp.visibleAppsPredicate.evaluate(with: $0) }.count
-            
-            UIView.performWithoutAnimation {
-                cell.bannerView.button.style = .custom
+            switch Section.allCases[indexPath.section]
+            {
+            case .added:
+                cell.bannerView.button.isHidden = true
                 
-                let contentWidth: CGFloat
-                if let error = source.error
+            case .trusted:
+                // Quicker way to determine whether a source is already added than by reading from disk.
+                if (self.addedSourcesDataSource.fetchedResultsController.fetchedObjects ?? []).contains(where: { $0.identifier == source.identifier })
                 {
-                    let image = UIImage(systemName: "exclamationmark")?.withTintColor(.white, renderingMode: .alwaysOriginal)
-                    cell.bannerView.button.setImage(image, for: .normal)
-                    cell.bannerView.button.setTitle(nil, for: .normal)
-                    cell.bannerView.button.tintColor = .systemYellow.withAlphaComponent(0.75)
-                    contentWidth = image?.size.width ?? 7.0
+                    // Source exists in .added section, so hide the button.
+                    cell.bannerView.button.isHidden = true
                     
-                    let action = UIAction(identifier: .showError) { _ in
-                        self.present(error)
+                    if #available(iOS 13.0, *)
+                    {
+                        let configuation = UIImage.SymbolConfiguration(pointSize: 24)
+                        
+                        let imageAttachment = NSTextAttachment()
+                        imageAttachment.image = UIImage(systemName: "checkmark.circle", withConfiguration: configuation)?.withTintColor(.altPrimary)
+
+                        let attributedText = NSAttributedString(attachment: imageAttachment)
+                        cell.bannerView.buttonLabel.attributedText = attributedText
+                        cell.bannerView.buttonLabel.textAlignment = .center
+                        cell.bannerView.buttonLabel.isHidden = false
                     }
-                    cell.bannerView.button.addAction(action, for: .primaryActionTriggered)
-                    cell.bannerView.button.removeAction(identifiedBy: .showDetails, for: .primaryActionTriggered)
                 }
                 else
                 {
-                    let text = numberOfApps.description
-                    cell.bannerView.button.setImage(nil, for: .normal)
-                    cell.bannerView.button.setTitle(text, for: .normal)
-                    cell.bannerView.button.tintColor = .white.withAlphaComponent(0.2)
-                    
-                    let font = UIFont.boldSystemFont(ofSize: 14)
-                    contentWidth = (text as NSString).size(withAttributes: [.font: font]).width
-                    
-                    let action = UIAction(identifier: .showDetails) { _ in
-                        self.showSourceDetails(for: source)
-                    }
-                    cell.bannerView.button.addAction(action, for: .primaryActionTriggered)
-                    cell.bannerView.button.removeAction(identifiedBy: .showError, for: .primaryActionTriggered)
+                    // Source does not exist in .added section, so show the button.
+                    cell.bannerView.button.isHidden = false
+                    cell.bannerView.buttonLabel.attributedText = nil
                 }
                 
-                var config = cell.bannerView.button.configuration ?? UIButton.Configuration.plain()
-                config.cornerStyle = .capsule
-                let horizontalPadding = max(0, (31.0 - contentWidth) / 2.0)
-                config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: horizontalPadding, bottom: 0, trailing: horizontalPadding)
-                cell.bannerView.button.configuration = config
+                cell.bannerView.button.setTitle(NSLocalizedString("ADD", comment: ""), for: .normal)
+                cell.bannerView.button.addTarget(self, action: #selector(SourcesViewController.addTrustedSource(_:)), for: .primaryActionTriggered)
             }
+                                                
+            cell.bannerView.titleLabel.text = source.name
+            cell.bannerView.subtitleLabel.text = source.sourceURL.absoluteString
+            cell.bannerView.subtitleLabel.numberOfLines = 2
             
-            let dateText: String
-            if let lastUpdatedDate = source.lastUpdatedDate
-            {
-                dateText = Date().relativeDateString(since: lastUpdatedDate, dateFormatter: Date.shortDateFormatter)
-            }
-            else
-            {
-                dateText = NSLocalizedString("Never", comment: "")
-            }
-                            
-            let text = String(format: NSLocalizedString("Last Updated: %@", comment: ""), dateText)
-            cell.bannerView.subtitleLabel.text = text
-            cell.bannerView.subtitleLabel.numberOfLines = 1
+            cell.errorBadge?.isHidden = (source.error == nil)
             
-            let attributedOutput = AttributedString(localized: "^[\(numberOfApps) app](inflect: true)")
-            let numberOfAppsText = String(attributedOutput.characters)
-            
-            let accessibilityLabel = source.name + "\n" + text + ".\n" + numberOfAppsText
-            cell.bannerView.accessibilityLabel = accessibilityLabel
-                        
-            if source.identifier != Source.altStoreIdentifier
-            {
-                cell.accessories = [.delete(displayed: .whenEditing)]
-            }
-            else
-            {
-                cell.accessories = []
-            }
-            
+            let attributedLabel = NSAttributedString(string: source.name + "\n" + source.sourceURL.absoluteString, attributes: [.accessibilitySpeechPunctuation: true])
+            cell.bannerView.accessibilityAttributedLabel = attributedLabel
             cell.bannerView.accessibilityTraits.remove(.button)
             
             // Make sure refresh button is correct size.
             cell.layoutIfNeeded()
         }
-        dataSource.prefetchHandler = { (source, indexPath) in
-            guard let imageURL = source.effectiveIconURL else { return nil }
-            return try await ImagePipeline.shared.image(for: imageURL)
-        }
-        dataSource.prefetchCompletionHandler = { (cell, image, indexPath, error) in
-            let cell = cell as! AppBannerCollectionViewCell
-            cell.bannerView.iconImageView.isIndicatingActivity = false
-            cell.bannerView.iconImageView.image = image
-            
-            if let error = error
-            {
-                debugLog("Error loading image: \(error)")
-            }
-        }
         
         return dataSource
     }
     
-    @IBSegueAction
-    func makeSourceDetailViewController(_ coder: NSCoder, sender: Any?) -> UIViewController?
+    func makeAddedSourcesDataSource() -> RSTFetchedResultsCollectionViewDataSource<Source>
     {
-        guard let source = sender as? Source else { return nil }
+        let fetchRequest = Source.fetchRequest() as NSFetchRequest<Source>
+        fetchRequest.returnsObjectsAsFaults = false
+        fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \Source.name, ascending: true),
+                                        NSSortDescriptor(keyPath: \Source.sourceURL, ascending: true),
+                                        NSSortDescriptor(keyPath: \Source.identifier, ascending: true)]
         
-        let sourceDetailViewController = SourceDetailViewController(source: source, coder: coder)
-        return sourceDetailViewController
+        let dataSource = RSTFetchedResultsCollectionViewDataSource<Source>(fetchRequest: fetchRequest, managedObjectContext: DatabaseManager.shared.viewContext)
+        return dataSource
     }
     
-    @IBAction
-    func unwindFromAddSource(_ segue: UIStoryboardSegue)
+    func makeTrustedSourcesDataSource() -> RSTArrayCollectionViewDataSource<Source>
     {
+        let dataSource = RSTArrayCollectionViewDataSource<Source>(items: [])
+        return dataSource
     }
 }
 
 private extension SourcesViewController
 {
-    func handleAddSourceDeepLink()
+    @IBAction func addSource()
     {
-        Task {
-            guard let url = self.deepLinkSourceURL, self.view.window != nil else { return }
-            
-            // Only handle deep link once.
-            self.deepLinkSourceURL = nil
+        let alertController = UIAlertController(title: NSLocalizedString("Add Source", comment: ""), message: nil, preferredStyle: .alert)
+        alertController.addTextField { (textField) in
+            textField.placeholder = "https://apps.altstore.io"
+            textField.textContentType = .URL
+        }
+        alertController.addAction(.cancel)
+        alertController.addAction(UIAlertAction(title: NSLocalizedString("Add", comment: ""), style: .default) { (action) in
+            guard let text = alertController.textFields![0].text else { return }
+            guard var sourceURL = URL(string: text) else { return }
+            if sourceURL.scheme == nil {
+                guard let httpsSourceURL = URL(string: "https://" + text) else { return }
+                sourceURL = httpsSourceURL
+            }
             
             self.navigationItem.leftBarButtonItem?.isIndicatingActivity = true
             
-            func finish(_ result: Result<Void, Error>)
+            self.addSource(url: sourceURL) { _ in
+                self.navigationItem.leftBarButtonItem?.isIndicatingActivity = false
+            }
+        })
+        
+        self.present(alertController, animated: true, completion: nil)
+    }
+    
+    func addSource(url: URL, isTrusted: Bool = false, completionHandler: ((Result<Void, Error>) -> Void)? = nil)
+    {
+        guard self.view.window != nil else { return }
+        
+        if url == self.deepLinkSourceURL
+        {
+            // Only handle deep link once.
+            self.deepLinkSourceURL = nil
+        }
+        
+        func finish(_ result: Result<Void, Error>)
+        {
+            DispatchQueue.main.async {
+                switch result
+                {
+                case .success: break
+                case .failure(OperationError.cancelled): break
+                case .failure(let error): self.present(error)
+                }
+                
+                self.collectionView.reloadSections([Section.trusted.rawValue])
+                
+                completionHandler?(result)
+            }
+        }
+        
+        var dependencies: [Foundation.Operation] = []
+        if let fetchTrustedSourcesOperation = self.fetchTrustedSourcesOperation
+        {
+            // Must fetch trusted sources first to determine whether this is a trusted source.
+            // We assume fetchTrustedSources() has already been called before this method.
+            dependencies = [fetchTrustedSourcesOperation]
+        }
+        
+        AppManager.shared.fetchSource(sourceURL: url, dependencies: dependencies) { (result) in
+            do
             {
+                let source = try result.get()
+                let sourceName = source.name
+                let managedObjectContext = source.managedObjectContext
+                
+                #if !BETA
+                guard let trustedSourceIDs = UserDefaults.shared.trustedSourceIDs, trustedSourceIDs.contains(source.identifier) else { throw SourceError(code: .unsupported, source: source) }
+                #endif
+                
+                // Hide warning when adding a featured trusted source.
+                let message = isTrusted ? nil : NSLocalizedString("Make sure to only add sources that you trust.", comment: "")
+                
                 DispatchQueue.main.async {
-                    switch result
-                    {
-                    case .success: break
-                    case .failure(let error) where error is CancellationError: break
-                        
-                    case .failure(var error as SourceError):
-                        let title = String(format: NSLocalizedString("“%@” could not be added to SideStore.", comment: ""), error.$source.name)
-                        error.errorTitle = title
-                        self.present(error)
-                        
-                    case .failure(let error as NSError):
-                        self.present(error.withLocalizedTitle(NSLocalizedString("Unable to Add Source", comment: "")))
-                    }
-                    
-                    self.navigationItem.leftBarButtonItem?.isIndicatingActivity = false
+                    let alertController = UIAlertController(title: String(format: NSLocalizedString("Would you like to add the source “%@”?", comment: ""), sourceName),
+                                                            message: message, preferredStyle: .alert)
+                    alertController.addAction(UIAlertAction(title: UIAlertAction.cancel.title, style: UIAlertAction.cancel.style) { _ in
+                        finish(.failure(OperationError.cancelled))
+                    })
+                    alertController.addAction(UIAlertAction(title: NSLocalizedString("Add Source", comment: ""), style: UIAlertAction.ok.style) { _ in
+                        managedObjectContext?.perform {
+                            do
+                            {
+                                try managedObjectContext?.save()
+                                finish(.success(()))
+                            }
+                            catch
+                            {
+                                finish(.failure(error))
+                            }
+                        }
+                    })
+                    self.present(alertController, animated: true, completion: nil)
                 }
             }
-            
-            let backgroundContext = DatabaseManager.shared.persistentContainer.newBackgroundContext()
-            let source = try await AppManager.shared.fetchSource(sourceURL: url, managedObjectContext: backgroundContext)
-            await MainActor.run {
-                showSourceDetails(for: source)
+            catch
+            {
+                finish(.failure(error))
             }
-            finish(.success(()))
         }
     }
 
@@ -385,79 +308,135 @@ private extension SourcesViewController
         }
         
         let nsError = error as NSError
-        let title = nsError.localizedTitle // OK if nil.
-        let message = [nsError.localizedDescription, nsError.localizedDebugDescription, nsError.localizedRecoverySuggestion].compactMap { $0 }.joined(separator: "\n\n")
+        let message = nsError.userInfo[NSDebugDescriptionErrorKey] as? String ?? nsError.localizedRecoverySuggestion
         
-        let alertController = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        let alertController = UIAlertController(title: error.localizedDescription, message: message, preferredStyle: .alert)
         alertController.addAction(.ok)
         self.present(alertController, animated: true, completion: nil)
     }
     
-    func remove(_ source: Source, completionHandler: ((Bool) -> Void)? = nil)
+    func fetchTrustedSources()
     {
-        Task {
-            do
+        func finish(_ result: Result<[Source], Error>)
+        {
+            self.fetchTrustedSourcesResult = result.map { _ in () }
+            
+            DispatchQueue.main.async {
+                do
+                {
+                    let sources = try result.get()
+                    print("Fetched trusted sources:", sources.map { $0.identifier })
+
+                    let sectionUpdate = RSTCellContentChange(type: .update, sectionIndex: 0)
+                    self.trustedSourcesDataSource.setItems(sources, with: [sectionUpdate])
+                }
+                catch
+                {
+                    print("Error fetching trusted sources:", error)
+                    
+                    let sectionUpdate = RSTCellContentChange(type: .update, sectionIndex: 0)
+                    self.trustedSourcesDataSource.setItems([], with: [sectionUpdate])
+                }
+            }
+        }
+        
+        self.fetchTrustedSourcesOperation = AppManager.shared.fetchTrustedSources { result in
+            switch result
             {
-                try await AppManager.shared.remove(source, presentingViewController: self)
+            case .failure(let error): finish(.failure(error))
+            case .success(let trustedSources):
+                // Cache trusted source IDs.
+                UserDefaults.shared.trustedSourceIDs = trustedSources.map { $0.identifier }
                 
-                completionHandler?(true)
-            }
-            catch is CancellationError
-            {
-                completionHandler?(false)
-            }
-            catch
-            {
-                completionHandler?(false)
-                self.present(error)
+                // Don't show sources without a sourceURL.
+                let featuredSourceURLs = trustedSources.compactMap { $0.sourceURL }
+                
+                // This context is never saved, but keeps the managed sources alive.
+                let context = DatabaseManager.shared.persistentContainer.newBackgroundSavingViewContext()
+                self._fetchTrustedSourcesContext = context
+                
+                let dispatchGroup = DispatchGroup()
+                
+                var sourcesByURL = [URL: Source]()
+                var fetchError: Error?
+                
+                for sourceURL in featuredSourceURLs
+                {
+                    dispatchGroup.enter()
+                    
+                    AppManager.shared.fetchSource(sourceURL: sourceURL, managedObjectContext: context) { result in
+                        // Serialize access to sourcesByURL.
+                        context.performAndWait {
+                            switch result
+                            {
+                            case .failure(let error): fetchError = error
+                            case .success(let source): sourcesByURL[source.sourceURL] = source
+                            }
+                            
+                            dispatchGroup.leave()
+                        }
+                    }
+                }
+                
+                dispatchGroup.notify(queue: .main) {
+                    if let error = fetchError
+                    {
+                        finish(.failure(error))
+                    }
+                    else
+                    {
+                        let sources = featuredSourceURLs.compactMap { sourcesByURL[$0] }
+                        finish(.success(sources))
+                    }
+                }
             }
         }
     }
     
-    func showSourceDetails(for source: Source)
+    @IBAction func addTrustedSource(_ sender: PillButton)
     {
-        self.performSegue(withIdentifier: "showSourceDetails", sender: source)
-    }
-    
-    func update()
-    {
-        let sources = self.dataSource.fetchedResultsController.fetchedObjects ?? []
-        let hasOtherSources = sources.contains { $0.identifier != Source.altStoreIdentifier }
+        let point = self.collectionView.convert(sender.center, from: sender.superview)
+        guard let indexPath = self.collectionView.indexPathForItem(at: point) else { return }
         
-        if !hasOtherSources
-        {
-            // Show placeholder view
-            
-            self.placeholderView.isHidden = false
-            self.collectionView.alwaysBounceVertical = false
-            
-            self.setEditing(false, animated: true)
-        }
-        else
-        {
-            self.placeholderView.isHidden = true
-            self.collectionView.alwaysBounceVertical = true
+        let completedProgress = Progress(totalUnitCount: 1)
+        completedProgress.completedUnitCount = 1
+        sender.progress = completedProgress
+        
+        let source = self.dataSource.item(at: indexPath)
+        self.addSource(url: source.sourceURL, isTrusted: true) { _ in
+            //FIXME: Handle cell reuse.
+            sender.progress = nil
         }
     }
     
-    @objc func showInstallingAppToastView(_ notification: Notification)
+    func remove(_ source: Source)
     {
-        guard let app = notification.object as? StoreApp else { return }
-        self._installingApp = app
+        let alertController = UIAlertController(title: String(format: NSLocalizedString("Are you sure you want to remove the source “%@”?", comment: ""), source.name),
+                                                message: NSLocalizedString("Any apps you've installed from this source will remain, but they'll no longer receive any app updates.", comment: ""), preferredStyle: .alert)
+        alertController.addAction(UIAlertAction(title: UIAlertAction.cancel.title, style: UIAlertAction.cancel.style, handler: nil))
+        alertController.addAction(UIAlertAction(title: NSLocalizedString("Remove Source", comment: ""), style: .destructive) { _ in
+            DatabaseManager.shared.persistentContainer.performBackgroundTask { (context) in
+                let source = context.object(with: source.objectID) as! Source
+                context.delete(source)
+                
+                do
+                {
+                    try context.save()
+                    
+                    DispatchQueue.main.async {
+                        self.collectionView.reloadSections([Section.trusted.rawValue])
+                    }
+                }
+                catch
+                {
+                    DispatchQueue.main.async {
+                        self.present(error)
+                    }
+                }
+            }
+        })
         
-        let text = String(format: NSLocalizedString("Downloading %@…", comment: ""), app.name)        
-        let toastView = ToastView(text: text, detailText: NSLocalizedString("Tap to view progress.", comment: ""))
-        toastView.addTarget(self, action: #selector(SourcesViewController.showAppDetail), for: .touchUpInside)
-        toastView.show(in: self)
-    }
-    
-    @objc func showAppDetail()
-    {
-        guard let app = self._installingApp else { return }
-        self._installingApp = nil
-        
-        let appViewController = AppViewController.makeAppViewController(app: app)
-        self.navigationController?.pushViewController(appViewController, animated: true)
+        self.present(alertController, animated: true, completion: nil)
     }
 }
 
@@ -468,32 +447,214 @@ extension SourcesViewController
         self.collectionView.deselectItem(at: indexPath, animated: true)
         
         let source = self.dataSource.item(at: indexPath)
-        self.showSourceDetails(for: source)
-    }
-}
-
-extension SourcesViewController: NSFetchedResultsControllerDelegate
-{
-    func controllerWillChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) 
-    {
-        self.dataSource.controllerWillChangeContent(controller)
-    }
-    
-    func controllerDidChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) 
-    {
-        self.dataSource.controllerDidChangeContent(controller)
+        guard let error = source.error else { return }
         
-        self.update()
-    }
-    
-    func controller(_ controller: NSFetchedResultsController<NSFetchRequestResult>, didChange anObject: Any, at indexPath: IndexPath?, for type: NSFetchedResultsChangeType, newIndexPath: IndexPath?) 
-    {
-        self.dataSource.controller(controller, didChange: anObject, at: indexPath, for: type, newIndexPath: newIndexPath)
-    }
-    
-    func controller(_ controller: NSFetchedResultsController<NSFetchRequestResult>, didChange sectionInfo: NSFetchedResultsSectionInfo, atSectionIndex sectionIndex: Int, for type: NSFetchedResultsChangeType) 
-    {
-        self.dataSource.controller(controller, didChange: sectionInfo, atSectionIndex: sectionIndex, for: type)
+        self.present(error)
     }
 }
 
+extension SourcesViewController: UICollectionViewDelegateFlowLayout
+{
+    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize
+    {
+        return CGSize(width: collectionView.bounds.width, height: 80)
+    }
+    
+    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, referenceSizeForHeaderInSection section: Int) -> CGSize
+    {
+        let indexPath = IndexPath(row: 0, section: section)
+        let headerView = self.collectionView(collectionView, viewForSupplementaryElementOfKind: UICollectionView.elementKindSectionHeader, at: indexPath)
+        
+        // Use this view to calculate the optimal size based on the collection view's width
+        let size = headerView.systemLayoutSizeFitting(CGSize(width: collectionView.frame.width, height: UIView.layoutFittingExpandedSize.height),
+                                                      withHorizontalFittingPriority: .required, // Width is fixed
+                                                      verticalFittingPriority: .fittingSizeLevel) // Height can be as large as needed
+        return size
+    }
+    
+    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, referenceSizeForFooterInSection section: Int) -> CGSize
+    {
+        guard Section(rawValue: section) == .trusted else { return .zero }
+        
+        let indexPath = IndexPath(row: 0, section: section)
+        let headerView = self.collectionView(collectionView, viewForSupplementaryElementOfKind: UICollectionView.elementKindSectionFooter, at: indexPath)
+        
+        // Use this view to calculate the optimal size based on the collection view's width
+        let size = headerView.systemLayoutSizeFitting(CGSize(width: collectionView.frame.width, height: UIView.layoutFittingExpandedSize.height),
+                                                      withHorizontalFittingPriority: .required, // Width is fixed
+                                                      verticalFittingPriority: .fittingSizeLevel) // Height can be as large as needed
+        return size
+    }
+    
+    override func collectionView(_ collectionView: UICollectionView, viewForSupplementaryElementOfKind kind: String, at indexPath: IndexPath) -> UICollectionReusableView
+    {
+        let reuseIdentifier = (kind == UICollectionView.elementKindSectionHeader) ? "Header" : "Footer"
+        
+        let headerView = collectionView.dequeueReusableSupplementaryView(ofKind: kind, withReuseIdentifier: reuseIdentifier, for: indexPath) as! TextCollectionReusableView
+        headerView.layoutMargins.left = self.view.layoutMargins.left
+        headerView.layoutMargins.right = self.view.layoutMargins.right
+        
+        let almostRequiredPriority = UILayoutPriority(UILayoutPriority.required.rawValue - 1) // Can't be required or else we can't satisfy constraints when hidden (size = 0).
+        headerView.leadingLayoutConstraint?.priority = almostRequiredPriority
+        headerView.trailingLayoutConstraint?.priority = almostRequiredPriority
+        headerView.topLayoutConstraint?.priority = almostRequiredPriority
+        headerView.bottomLayoutConstraint?.priority = almostRequiredPriority
+        
+        switch kind
+        {
+        case UICollectionView.elementKindSectionHeader:
+            switch Section.allCases[indexPath.section]
+            {
+            case .added:
+                headerView.textLabel.text = NSLocalizedString("Sources control what apps are available to download through SideStore.", comment: "")
+                headerView.textLabel.font = UIFont.preferredFont(forTextStyle: .callout)
+                headerView.textLabel.textAlignment = .natural
+                
+                headerView.topLayoutConstraint.constant = 14
+                headerView.bottomLayoutConstraint.constant = 30
+                
+            case .trusted:
+                switch self.fetchTrustedSourcesResult
+                {
+                case .failure: headerView.textLabel.text = NSLocalizedString("Error Loading Trusted Sources", comment: "")
+                case .success, .none: headerView.textLabel.text = NSLocalizedString("Trusted Sources", comment: "")
+                }
+                
+                let descriptor = UIFontDescriptor.preferredFontDescriptor(withTextStyle: .callout).withSymbolicTraits(.traitBold)!
+                headerView.textLabel.font = UIFont(descriptor: descriptor, size: 0)
+                headerView.textLabel.textAlignment = .center
+                
+                headerView.topLayoutConstraint.constant = 54
+                headerView.bottomLayoutConstraint.constant = 15
+            }
+            
+        case UICollectionView.elementKindSectionFooter:
+            let footerView = headerView as! SourcesFooterView
+            let font = UIFont.preferredFont(forTextStyle: .subheadline)
+            
+            switch self.fetchTrustedSourcesResult
+            {
+            case .failure(let error):
+                footerView.textView.font = font
+                footerView.textView.text = error.localizedDescription
+                
+                footerView.activityIndicatorView.stopAnimating()
+                footerView.topLayoutConstraint.constant = 0
+                footerView.textView.textAlignment = .center
+                
+            case .success, .none:
+                footerView.textView.delegate = self
+                
+                let attributedText = NSMutableAttributedString(
+                    string: NSLocalizedString("SideStore has reviewed these sources to make sure they meet our safety standards.\n\nSupport for untrusted sources is currently in beta, but you can help test them out by", comment: ""),
+                    attributes: [.font: font, .foregroundColor: UIColor.gray]
+                )
+                attributedText.mutableString.append(" ")
+                
+                let boldedFont = UIFont(descriptor: font.fontDescriptor.withSymbolicTraits(.traitBold)!, size: font.pointSize)
+                let openPatreonURL = URL(string: "https://SideStore.io/patreon")!
+                
+                let joinPatreonText = NSAttributedString(
+                    string: NSLocalizedString("joining our Patreon.", comment: ""),
+                    attributes: [.font: boldedFont, .link: openPatreonURL, .underlineColor: UIColor.clear]
+                )
+                attributedText.append(joinPatreonText)
+                
+                footerView.textView.attributedText = attributedText
+                footerView.textView.textAlignment = .natural
+                
+                if self.fetchTrustedSourcesResult != nil
+                {
+                    footerView.activityIndicatorView.stopAnimating()
+                    footerView.topLayoutConstraint.constant = 20
+                }
+                else
+                {
+                    footerView.activityIndicatorView.startAnimating()
+                    footerView.topLayoutConstraint.constant = 0
+                }
+            }
+            
+        default: break
+        }
+                
+        return headerView
+    }
+}
+
+@available(iOS 13, *)
+extension SourcesViewController
+{
+    override func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration?
+    {
+        let source = self.dataSource.item(at: indexPath)
+
+        return UIContextMenuConfiguration(identifier: indexPath as NSIndexPath, previewProvider: nil) { (suggestedActions) -> UIMenu? in
+            let viewErrorAction = UIAction(title: NSLocalizedString("View Error", comment: ""), image: UIImage(systemName: "exclamationmark.circle")) { (action) in
+                guard let error = source.error else { return }
+                self.present(error)
+            }
+            
+            let deleteAction = UIAction(title: NSLocalizedString("Remove", comment: ""), image: UIImage(systemName: "trash"), attributes: [.destructive]) { (action) in
+                self.remove(source)
+            }
+            
+            let addAction = UIAction(title: String(format: NSLocalizedString("Add “%@”", comment: ""), source.name), image: UIImage(systemName: "plus")) { (action) in
+                self.addSource(url: source.sourceURL, isTrusted: true)
+            }
+            
+            var actions: [UIAction] = []
+            
+            if source.error != nil
+            {
+                actions.append(viewErrorAction)
+            }
+            
+            switch Section.allCases[indexPath.section]
+            {
+            case .added:
+                if source.identifier != Source.altStoreIdentifier
+                {
+                    actions.append(deleteAction)
+                }
+                
+            case .trusted:
+                if let cell = collectionView.cellForItem(at: indexPath) as? BannerCollectionViewCell, !cell.bannerView.button.isHidden
+                {
+                    actions.append(addAction)
+                }
+            }
+            
+            guard !actions.isEmpty else { return nil }
+            
+            let menu = UIMenu(title: "", children: actions)
+            return menu
+        }
+    }
+
+    override func collectionView(_ collectionView: UICollectionView, previewForHighlightingContextMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview?
+    {
+        guard let indexPath = configuration.identifier as? NSIndexPath else { return nil }
+        guard let cell = collectionView.cellForItem(at: indexPath as IndexPath) as? BannerCollectionViewCell else { return nil }
+
+        let parameters = UIPreviewParameters()
+        parameters.backgroundColor = .clear
+        parameters.visiblePath = UIBezierPath(roundedRect: cell.bannerView.bounds, cornerRadius: cell.bannerView.layer.cornerRadius)
+
+        let preview = UITargetedPreview(view: cell.bannerView, parameters: parameters)
+        return preview
+    }
+
+    override func collectionView(_ collectionView: UICollectionView, previewForDismissingContextMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview?
+    {
+        return self.collectionView(collectionView, previewForHighlightingContextMenuWithConfiguration: configuration)
+    }
+}
+
+extension SourcesViewController: UITextViewDelegate
+{
+    func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool
+    {
+        return true
+    }
+}

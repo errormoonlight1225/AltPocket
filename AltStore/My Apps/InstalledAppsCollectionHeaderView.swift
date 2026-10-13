@@ -6,9 +6,9 @@
 //  Copyright © 2020 Riley Testut. All rights reserved.
 //
 
-@preconcurrency import UIKit
+import UIKit
 
-final class InstalledAppsCollectionHeaderView: UICollectionReusableView
+class InstalledAppsCollectionHeaderView: UICollectionReusableView
 {
     let textLabel: UILabel
     let button: UIButton

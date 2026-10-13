@@ -9,7 +9,7 @@
 import Foundation
 import OSLog
 
-public let customLog = OSLog(subsystem: "org.sidestore.sidestore",
+let customLog = OSLog(subsystem: "org.sidestore.sidestore",
                       category: "ios")
 
 
@@ -18,7 +18,6 @@ public extension OSLog {
     /// - Parameters:
     ///   - message: String or format string
     ///   - args: optional args for format string
-    @inlinable
     static func error(_ message: StaticString, _ args: CVarArg...) {
         os_log(message, log: customLog, type: .error, args)
     }
@@ -27,7 +26,6 @@ public extension OSLog {
     /// - Parameters:
     ///   - message: String or format string
     ///   - args: optional args for format string
-    @inlinable
     static func info(_ message: StaticString, _ args: CVarArg...) {
         os_log(message, log: customLog, type: .info, args)
     }
@@ -36,7 +34,6 @@ public extension OSLog {
     /// - Parameters:
     ///   - message: String or format string
     ///   - args: optional args for format string
-    @inlinable
     static func debug(_ message: StaticString, _ args: CVarArg...) {
         os_log(message, log: customLog, type: .debug, args)
     }
@@ -48,7 +45,6 @@ public extension OSLog {
 /// - Parameters:
 ///   - message: String or format string
 ///   - args: optional args for format string
-@inlinable
 public func ELOG(_ message: StaticString, file: StaticString = #file, function: StaticString = #function, line: UInt = #line, _ args: CVarArg...) {
     OSLog.error(message, args)
 }
@@ -57,7 +53,6 @@ public func ELOG(_ message: StaticString, file: StaticString = #file, function: 
 /// - Parameters:
 ///   - message: String or format string
 ///   - args: optional args for format string
-@inlinable
 public func ILOG(_ message: StaticString, file: StaticString = #file, function: StaticString = #function, line: UInt = #line, _ args: CVarArg...) {
     OSLog.info(message, args)
 }

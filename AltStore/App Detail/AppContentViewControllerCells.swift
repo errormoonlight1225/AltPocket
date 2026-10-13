@@ -6,9 +6,9 @@
 //  Copyright © 2019 Riley Testut. All rights reserved.
 //
 
-@preconcurrency import UIKit
+import UIKit
 
-final class PermissionCollectionViewCell: UICollectionViewCell
+class PermissionCollectionViewCell: UICollectionViewCell
 {
     @IBOutlet var button: UIButton!
     @IBOutlet var textLabel: UILabel!
@@ -29,7 +29,7 @@ final class PermissionCollectionViewCell: UICollectionViewCell
     }
 }
 
-final class AppContentTableViewCell: UITableViewCell
+class AppContentTableViewCell: UITableViewCell
 {
     override func systemLayoutSizeFitting(_ targetSize: CGSize, withHorizontalFittingPriority horizontalFittingPriority: UILayoutPriority, verticalFittingPriority: UILayoutPriority) -> CGSize
     {
