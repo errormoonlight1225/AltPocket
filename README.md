@@ -56,3 +56,17 @@ python3 scripts/package.py
 - 本机回环网络技术参考 Jitterbug（https://github.com/osy/Jitterbug）和 LocalDevVPN（https://github.com/jkcoxson/LocalDevVPN）；这里是独立编写的 Packet Tunnel 实现，未使用 LocalDevVPN 品牌与图标。
 - `Vendor/num_threads-0.1.7` 保留 Jacob Pratt 的 MIT 许可证；Darwin 兼容修改只替换失效的 task-port 包装接口。
 - 本项目衍生代码遵循上游 **AGPL-3.0**，参见 LICENSE。保留 Git 历史及原作者署名。新增兼容与 VPN 代码由 AI 辅助编写，需人工与真机审查；不向上游提交自动化 PR。
+
+
+## 0.1.1：实验性 WireGuard 本地服务
+
+本机服务页面新增启动/停止 WireGuard UDP 服务、导出 `.conf` 与 TCP 设备检测。复用固定版本 em_proxy / BoringTun，真正进行 WireGuard 握手、解密、IPv4 地址交换与重新加密，不是界面占位功能。
+
+1. 断开内置 LocalVPN。
+2. 导出客户端配置，在**另一个兼容系统版本的 WireGuard 客户端**导入。
+3. 回到 AltPocket 启动服务，再到客户端开启隧道，返回 AltPocket 检测设备服务。
+4. 检测只验证 TCP 62078 可达，不证明配对、登录、安装或续签成功。
+
+仅绑定 `127.0.0.1:51820`，仅路由 `10.7.0.1/32`，不修改 DNS，不提供远程上网代理。配置沿用上游公开测试密钥，**不可用于真实远程 VPN 或暴露到局域网**。
+
+服务运行在 App 进程，切换客户端或后台后可能被 iOS 暂停。UDP 监听状态不是握手成功状态。iOS 12 真机尚未验证；当前没有确认可直接下载的 iOS 12 WireGuard 客户端。本次保留内置 LocalVPN 扩展，因此此 IPA 的签名权限要求不变，不能宣称已支持免费 Apple ID 安装。

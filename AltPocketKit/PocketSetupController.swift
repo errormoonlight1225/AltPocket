@@ -21,14 +21,15 @@ final class PocketSetupController: UITableViewController, UIDocumentPickerDelega
     }
     deinit { NotificationCenter.default.removeObserver(self); probe?.cancel(); probeTimeout?.cancel() }
     @objc private func refresh() { DispatchQueue.main.async { self.tableView.reloadData() } }
-    override func numberOfSections(in tableView: UITableView) -> Int { return 3 }
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { return [3, 4, 1][section] }
+    override func numberOfSections(in tableView: UITableView) -> Int { return 4 }
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { return [3, 4, 4, 1][section] }
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        return ["1 · 设备与签名准备", "2 · 内置 LocalVPN", "3 · 实验版说明"][section]
+        return ["1 · 设备与签名准备", "2 · 内置 LocalVPN", "3 · WireGuard 本地服务（实验）", "4 · 实验版说明"][section]
     }
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         if section == 0 { return "从已信任的电脑导出本机配对文件。UDID 可在电脑设备信息中查看。Anisette 服务只接收数据请求；Apple ID 密码由签名核心发给 Apple。请仅使用自己信任的 HTTPS 服务。" }
         if section == 1 { return "状态：\(PocketVPN.shared.statusText)。\(PocketRuntime.lastError ?? "")主 App 和扩展都需要带 Network Extension 权限的有效签名。普通免费 Apple ID 无法签发此权限。只处理本机 10.7.0.1 的流量，不提供上网代理。" }
+        if section == 2 { return "状态：\(PocketWireGuard.statusText)。仅监听 127.0.0.1:51820。需要兼容 iOS 12 的独立 WireGuard 客户端，导入配置并开启隧道。不要同时开启内置 LocalVPN。切到后台后服务可能被系统暂停；不保证常驻。" }
         return "基于 SideStore 0.1.1 / AltStore，AGPL-3.0；独立实验分支，非官方产品。iOS 12 真机、Apple 登录与续签尚待验证；新 iOS 也不保证兼容。后台续签由系统调度，不能保证常驻。"
     }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -36,7 +37,7 @@ final class PocketSetupController: UITableViewController, UIDocumentPickerDelega
         cell.textLabel?.numberOfLines = 0
         cell.detailTextLabel?.numberOfLines = 0
         cell.accessoryType = .disclosureIndicator
-        let titles = [["导入配对文件", "设置本机 UDID", "设置 Anisette HTTPS 地址"], ["安装 VPN 配置", "连接 LocalVPN", "断开 LocalVPN", "检测设备服务"], ["使用方法与开源说明"]]
+        let titles = [["导入配对文件", "设置本机 UDID", "设置 Anisette HTTPS 地址"], ["安装 VPN 配置", "连接 LocalVPN", "断开 LocalVPN", "检测设备服务"], ["启动 WireGuard 服务", "停止 WireGuard 服务", "导出客户端配置", "检测 WireGuard 设备连接"], ["使用方法与开源说明"]]
         cell.textLabel?.text = titles[indexPath.section][indexPath.row]
         if indexPath.section == 0 {
             cell.detailTextLabel?.text = [PocketRuntime.hasPairing ? "已导入；更换后请重新打开 App" : "尚未导入", PocketRuntime.deviceUDID == nil ? "尚未设置" : "已设置（不显示完整设备标识）", UserDefaults.standard.customAnisetteURL == nil ? "必须设置；无默认第三方服务" : "已设置"][indexPath.row]
@@ -79,10 +80,29 @@ final class PocketSetupController: UITableViewController, UIDocumentPickerDelega
                     self.show(error.map { "VPN 配置失败：\($0.localizedDescription)\n请检查 App 和扩展的签名权限。" } ?? "VPN 配置已安装，可以连接。")
                 }
             case 1:
-                do { try PocketVPN.shared.connect(); PocketRuntime.startIfPaired() }
+                do { PocketWireGuard.stop(); try PocketVPN.shared.connect(); PocketRuntime.startIfPaired() }
                 catch { show(error.localizedDescription) }
             case 2: PocketVPN.shared.disconnect()
             default: testDevice()
+            }
+        } else if indexPath.section == 2 {
+            switch indexPath.row {
+            case 0:
+                guard PocketVPN.shared.status != .connected && PocketVPN.shared.status != .connecting && PocketVPN.shared.status != .disconnecting else {
+                    show("请先断开内置 LocalVPN，等待完全断开后再启动 WireGuard 服务。"); return
+                }
+                do { try PocketWireGuard.start(); tableView.reloadData(); show("UDP 服务已启动。请在独立 WireGuard 客户端中导入配置并开启隧道，再返回此处检测连接。此状态不代表握手成功。"); }
+                catch { show(error.localizedDescription) }
+            case 1: PocketWireGuard.stop(); tableView.reloadData()
+            case 2:
+                do {
+                    let url = try PocketWireGuard.exportConfiguration()
+                    let share = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+                    share.popoverPresentationController?.sourceView = tableView
+                    share.popoverPresentationController?.sourceRect = tableView.rectForRow(at: indexPath)
+                    present(share, animated: true)
+                } catch { show(error.localizedDescription) }
+            default: testDevice(wireGuard: true)
             }
         } else {
             show("先签名安装 AltPocket（保留扩展及 VPN 权限），再导入本机配对文件、设置 UDID 与可信 Anisette 地址，连接 LocalVPN。最后在 Settings 登录 Apple ID，在 My Apps 的 + 导入 IPA。\n\n连接检测只证明 TCP 端口可达，不代表配对、签名或安装成功。此版本不依赖持续运行的电脑，但首次安装/配对需要电脑。\n\n来源：SideStore/SideStore、altstoreio/AltStore；本地回环方案参考 osy/Jitterbug 与 jkcoxson/LocalDevVPN。\n源码：https://github.com/errormoonlight1225/AltPocket")
@@ -102,8 +122,12 @@ final class PocketSetupController: UITableViewController, UIDocumentPickerDelega
         do { try PocketRuntime.importPairing(from: url); tableView.reloadData(); show("配对文件已导入。若更换了文件，请退出并重新打开 App。") }
         catch { show(error.localizedDescription) }
     }
-    private func testDevice() {
-        guard PocketVPN.shared.status == .connected else { show("请先连接内置 LocalVPN。"); return }
+    private func testDevice(wireGuard: Bool = false) {
+        if wireGuard {
+            guard PocketWireGuard.isRunning else { show("请先启动 WireGuard 服务，并在独立客户端开启隧道。"); return }
+        } else {
+            guard PocketVPN.shared.status == .connected else { show("请先连接内置 LocalVPN。"); return }
+        }
         busy = true; tableView.reloadData()
         let connection = NWConnection(host: "10.7.0.1", port: 62078, using: .tcp)
         probe = connection
